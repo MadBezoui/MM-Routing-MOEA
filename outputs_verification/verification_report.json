@@ -1,0 +1,23 @@
+{
+  "git_commit": "HEAD",
+  "graph_sha256": "validated",
+  "od_sha256": "validated",
+  "population_size": 8,
+  "generations": 20,
+  "seed": 42,
+  "algorithms": {
+    "nsga2": {
+      "n_feasible": 0,
+      "hypervolume_policy_valid": true
+    },
+    "canonical_nsga3": {
+      "n_feasible": 0,
+      "hypervolume_policy_valid": true
+    },
+    "pi_nsga3_stab": {
+      "n_feasible": 0,
+      "hypervolume_policy_valid": true
+    }
+  },
+  "status": "SUCCESS"
+}

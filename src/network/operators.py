@@ -45,8 +45,9 @@ class PathSampling(Sampling):
                 dest = self.destinations[0]
 
             def weight_func(u, v, d):
-                base_time = d.get('travel_time_sec', 60)
-                return base_time * self.rng.uniform(0.5, 2.0)
+                # In a MultiDiGraph, d is a dictionary of dictionaries keyed by edge key
+                min_time = min(attrs.get('travel_time_sec', 60) for attrs in d.values())
+                return min_time * self.rng.uniform(0.5, 2.0)
 
             path = None
             MAX_SAMPLING_ATTEMPTS = 20
@@ -125,7 +126,8 @@ class PathMutation(Mutation):
                 node1, node2 = path[idx1], path[idx2]
                 
                 def weight_func(u, v, d):
-                    return d.get('travel_time_sec', 60) * self.rng.uniform(0.5, 2.0)
+                    min_time = min(attrs.get('travel_time_sec', 60) for attrs in d.values())
+                    return min_time * self.rng.uniform(0.5, 2.0)
                     
                 try:
                     subpath = nx.shortest_path(self.G, source=node1, target=node2, weight=weight_func)

@@ -74,7 +74,7 @@ class ExperimentConfig:
 
 @dataclass
 class AlgorithmSweepConfig:
-    algorithms: Sequence[str] = ("nsga2", "nsga3", "moead", "smsemoa")
+    algorithms: Sequence[str] = ("nsga2", "canonical_nsga3", "pi_nsga3_raw", "pi_nsga3_stab", "moead", "smsemoa")
     nsga3_divisions: int = 8
     nsga3_informed_reference_directions: Optional[int] = 35
     moead_neighbors: int = 20
@@ -139,6 +139,9 @@ def resolve_population_size(
     reproducibility and strict adherence to the experimental protocol.
     """
     resolved_size = None
+    
+    if algorithm == "nsga3":
+        raise ValueError("Ambiguous algorithm identifier 'nsga3'. Use 'canonical_nsga3', 'pi_nsga3_raw', or 'pi_nsga3_stab'.")
     
     # Main plan and Convergence plan (150 profiles / 10 profiles)
     if plan in ["main", "convergence"]:

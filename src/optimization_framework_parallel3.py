@@ -71,7 +71,12 @@ class ProfiledMultimodalProblem(Problem):
         scenario: object,
         n_ieq_constr: int = 1,
     ):
-        super().__init__(n_var=n_var, n_obj=n_obj, n_ieq_constr=n_ieq_constr, xl=np.asarray(xl), xu=np.asarray(xu))
+        # Force n_ieq_constr to 4 if we are using the discrete evaluator
+        is_discrete = getattr(evaluator, '__class__', None).__name__ == "PathMultimodalEvaluator"
+        if is_discrete:
+            n_ieq_constr = 4
+
+        super().__init__(n_var=n_var, n_obj=n_obj, n_ieq_constr=n_ieq_constr, xl=np.asarray(xl) if xl is not None else None, xu=np.asarray(xu) if xu is not None else None)
         self._evaluator = evaluator
         self.profile = profile
         self.extras = extras
@@ -87,7 +92,7 @@ class ProfiledMultimodalProblem(Problem):
 
 class PenaltyProblem(Problem):
     def __init__(self, base_problem: ProfiledMultimodalProblem, penalty_scale: float = 1e3):
-        super().__init__(n_var=base_problem.n_var, n_obj=base_problem.n_obj, xl=base_problem.xl, xu=base_problem.xu)
+        super().__init__(n_var=base_problem.n_var, n_obj=base_problem.n_obj, n_ieq_constr=base_problem.n_ieq_constr, xl=base_problem.xl, xu=base_problem.xu)
         self.base_problem = base_problem
         self.penalty_scale = penalty_scale
         self.profile = base_problem.profile
@@ -194,8 +199,11 @@ def make_algorithm(name: str, problem: Problem, population_size: int, n_partitio
         )
     lname = name.lower()
     
+    if lname == "nsga3":
+        raise ValueError("Ambiguous algorithm identifier 'nsga3'. Use 'canonical_nsga3', 'pi_nsga3_raw', or 'pi_nsga3_stab'.")
+    
     # Distinction between Canonical NSGA-III and PI-NSGA-III
-    if lname in ["nsga3", "canonical_nsga3"]:
+    if lname == "canonical_nsga3":
         ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=None)
     else:
         ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=priority_weights)
@@ -210,7 +218,7 @@ def make_algorithm(name: str, problem: Problem, population_size: int, n_partitio
     
     if lname == "nsga2":
         return NSGA2(pop_size=resolved_pop_size, **common)
-    if lname in ["nsga3", "canonical_nsga3", "pi_nsga3", "pi_nsga3_raw", "pi_nsga3_stab"]:
+    if lname in ["canonical_nsga3", "pi_nsga3", "pi_nsga3_raw", "pi_nsga3_stab"]:
         # Do not use max()! Single source of truth.
         return NSGA3(pop_size=resolved_pop_size, ref_dirs=ref_dirs, **common)
     if lname == "moead":

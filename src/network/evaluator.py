@@ -82,8 +82,9 @@ class PathMultimodalEvaluator:
                         invalid_reason = "missing_edge"
                         break
                         
-                    # Take the first edge
-                    d = edge_data[list(edge_data.keys())[0]]
+                    # Take the fastest edge deterministically
+                    best_key = min(edge_data.keys(), key=lambda k: edge_data[k].get('travel_time_sec', 60))
+                    d = edge_data[best_key]
                     
                     p_time += d.get('travel_time_sec', 60) / 60.0
                     mode = d.get('mode', 'walk')
