@@ -20,3 +20,7 @@ venv/
 # Temporary downloads
 *.part
 data/raw/*.osm
+
+# Experimental Results
+results/experiments/
+results/smoke_test/
