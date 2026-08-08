@@ -43,8 +43,6 @@ src/
 experiments/              the sensitivity and ablation studies of Sections 6.4-6.6
 results/
   network/                Table 6 artefacts
-  legacy_continuous_pipeline/   results of the superseded formulation (see below)
-archive/                  superseded scripts, kept for provenance
 ```
 
 ---
@@ -144,7 +142,7 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 
 This repository contains the exact reference implementation used to generate the results in the manuscript. All algorithmic variants, multimodal data processing scripts, and statistical evaluation tools (including the stabilized PI-NSGA-III formulation) are provided.
 
-The legacy formulation (used in earlier drafts solving a continuous mode-share problem) has been preserved in `results/legacy_continuous_pipeline/` and `archive/` for provenance. The current `src/` codebase solves the discrete path-based routing formulation as formally described in Section 3 of the final manuscript.
+The codebase solves the discrete path-based routing formulation as formally described in Section 3 of the final manuscript.
 
 ## Verification status
 

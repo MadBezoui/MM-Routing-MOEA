@@ -1,6 +1,0 @@
-{
-  "n_objectives_nominal": 4,
-  "twonn_intrinsic_dim_estimate": 1.5552938726254344,
-  "n_points_used": 2500,
-  "interpretation": "Effective dimensionality estimated at 1.56 via the TwoNN estimator of Facco et al. 2017. A value substantially below 4 indicates strong inter-objective correlations or a constraint-induced low-dimensional manifold in objective space \u2014 consistent with the geometric explanation for NSGA-III's reference-direction efficiency."
-}

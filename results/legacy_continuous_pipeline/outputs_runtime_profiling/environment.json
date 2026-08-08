@@ -1,6 +1,0 @@
-{
-  "machine": "macOS-15.5-arm64-arm-64bit",
-  "processor": "arm",
-  "python": "3.11.7",
-  "note": "single thread, no concurrent worker threads"
-}
