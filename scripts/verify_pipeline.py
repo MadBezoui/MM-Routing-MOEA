@@ -35,11 +35,11 @@ def run_verification():
     plan.profiles_df = profiles_df
     plan.seeds_by_algorithm = {
         "nsga2": [0],
-        "nsga3": [0],
+        "pi_nsga3_stab": [0],
         "canonical_nsga3": [0]
     }
-    plan.n_generations = 2
-    plan.population_size = 8
+    plan.n_generations = 20
+    plan.population_size = 12
     
     logger.info("Loading graph...")
     G = nx.read_graphml("data/processed/strasbourg_multimodal.graphml")
@@ -77,8 +77,16 @@ def run_verification():
         priority_weights=priority_weights,
         ref_point_factory=ref_point_factory,
         max_workers=1,
-        plan_type="main",
+        plan_type="verification_plan",
     )
+    
+    import pandas as pd
+    pop_file = out_dir / plan.name / "checkpoints" / "population" / "STU_0001__nsga2__seed0.csv"
+    if pop_file.exists():
+        df = pd.read_csv(pop_file)
+        assert df["feasible"].any(), "No feasible solutions found in verification!"
+        assert (df["obj_2"] > 0).any() or (df["obj_3"] > 0).any(), "No multimodal solutions found (all walk)!"
+        
     logger.info("Verification successful!")
 
 if __name__ == "__main__":

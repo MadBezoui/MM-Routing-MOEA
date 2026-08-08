@@ -16,6 +16,7 @@ venv/
 
 # Temporary downloads
 *.part
-data/processed/
+data/processed/*
+!data/processed/od_pairs.csv
 data/raw/strasbourg.osm.osm
 data/raw/alsace-latest.osm.pbf

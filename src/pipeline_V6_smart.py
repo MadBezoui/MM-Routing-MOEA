@@ -381,7 +381,7 @@ def build_problem_factory(survey, comfort_predictor, n_var: int = 5, n_obj: int 
             xu=[1.0] * local_n_var if evaluator_type != "discrete" else None,
             evaluator=local_evaluator,
             profile=profile, extras={}, scenario=scenario_copy,
-            n_ieq_constr=3,
+            n_ieq_constr=4,
         )
 
     return _factory
@@ -423,7 +423,7 @@ def build_smart_plans(profiles_df: pd.DataFrame, sms_seeds: int = 5) -> List[Sma
             profiles_df=main_profiles,
             seeds_by_algorithm={
                 "nsga2": tuple(range(20)),
-                "nsga3": tuple(range(20)),
+                "pi_nsga3_stab": tuple(range(20)),
             },
             n_generations=150, population_size=168, nsga3_partitions=8,
         ),
@@ -432,7 +432,9 @@ def build_smart_plans(profiles_df: pd.DataFrame, sms_seeds: int = 5) -> List[Sma
             profiles_df=extended_profiles,
             seeds_by_algorithm={
                 "nsga2": tuple(range(20)),
-                "nsga3": tuple(range(20)),
+                "canonical_nsga3": tuple(range(20)),
+                "pi_nsga3_raw": tuple(range(20)),
+                "pi_nsga3_stab": tuple(range(20)),
                 "moead": tuple(range(20)),
                 "smsemoa": tuple(range(sms_seeds)),
             },
@@ -443,7 +445,7 @@ def build_smart_plans(profiles_df: pd.DataFrame, sms_seeds: int = 5) -> List[Sma
             profiles_df=representative_profiles,
             seeds_by_algorithm={
                 "nsga2": tuple(range(20)),
-                "nsga3": tuple(range(20)),
+                "pi_nsga3_stab": tuple(range(20)),
             },
             n_generations=150, population_size=168, nsga3_partitions=8,
         ),

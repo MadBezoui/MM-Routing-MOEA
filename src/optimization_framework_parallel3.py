@@ -99,9 +99,9 @@ class MetricsCallback(Callback):
         F = pop.get("F")
         G = pop.get("G")
         feasible = np.all(G <= 0, axis=1) if G is not None and len(np.shape(G)) > 1 else (G <= 0 if G is not None else np.ones(len(F), dtype=bool))
-        feasible_F = F[feasible] if feasible.any() else F
+        feasible_F = F[feasible] if feasible.any() else np.empty((0, F.shape[1]))
 
-        hv = np.nan
+        hv = 0.0
         if self.reference_point is not None and feasible_F.size:
             hv = float(HV(ref_point=self.reference_point)(feasible_F))
 

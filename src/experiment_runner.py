@@ -56,22 +56,7 @@ def run_experiments():
                     plan.profiles_df.at[idx, 'origin_node'] = str(od_dict[pid]['origin_node'])
                     plan.profiles_df.at[idx, 'dest_node'] = str(od_dict[pid]['dest_node'])
     else:
-        # Generate and save fixed OD pairs for reproducibility
-        import pandas as pd
-        records = []
-        for plan in plans:
-            for idx, row in plan.profiles_df.iterrows():
-                O = random.choice(osm_nodes)
-                D = random.choice(osm_nodes)
-                plan.profiles_df.at[idx, 'origin_node'] = O
-                plan.profiles_df.at[idx, 'dest_node'] = D
-                records.append({
-                    "profile_id": row['profile_id'],
-                    "origin_node": O,
-                    "dest_node": D
-                })
-        pd.DataFrame(records).drop_duplicates('profile_id').to_csv(od_path, index=False)
-            
+        raise FileNotFoundError(f"OD pairs file not found at {od_path}. Run scripts/generate_od_pairs.py first.")
     logger.info("Training comfort models...")
     comfort_cfg = ComfortTrainingConfig()
     comfort_factory = SurveyInformedComfortFactory(comfort_cfg, real_survey)

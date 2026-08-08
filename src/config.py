@@ -167,6 +167,10 @@ def resolve_population_size(algorithm: str, plan: str, n_reference_directions: i
     elif plan == "equalization":
         return 170
 
+    # Verification plan
+    elif plan == "verification_plan":
+        return n_reference_directions if n_reference_directions is not None else 8
+
     # Fallback to default explicit size if n_reference_directions is provided
     if n_reference_directions is not None:
         return n_reference_directions

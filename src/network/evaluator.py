@@ -21,6 +21,7 @@ class PathMultimodalEvaluator:
         bus_distances = np.zeros(n_samples)
         tram_distances = np.zeros(n_samples)
         transfers = np.zeros(n_samples)
+        invalid_paths = np.zeros(n_samples)
         
         dominant_modes = []
         
@@ -33,29 +34,34 @@ class PathMultimodalEvaluator:
             p_tram_dist = 0.0
             p_transfers = 0
             
-            if path and len(path) > 1:
+            if not path or len(path) < 2 or str(path[0]) != str(profile.get("origin_node")) or str(path[-1]) != str(profile.get("dest_node")):
+                invalid_paths[i] = 1000.0
+            else:
                 for u, v in zip(path[:-1], path[1:]):
                     # Find shortest edge between u and v
                     edge_data = self.G.get_edge_data(u, v)
-                    if edge_data:
-                        # Take the first edge if multiple
-                        d = edge_data[list(edge_data.keys())[0]]
+                    if not edge_data:
+                        invalid_paths[i] = 1000.0
+                        break
                         
-                        p_time += d.get('travel_time_sec', 60) / 60.0
-                        mode = d.get('mode', 'walk')
-                        length = d.get('length', 0) / 1000.0
-                        
-                        if mode == 'walk':
-                            p_walk_dist += length
-                        elif mode == 'transfer':
-                            p_walk_dist += length
-                            p_transfers += 1
-                        elif mode == 'bus':
-                            p_bus_dist += length
-                        elif mode == 'tram':
-                            p_tram_dist += length
-                        elif mode == 'transit':
-                            p_bus_dist += length
+                    # Take the first edge if multiple
+                    d = edge_data[list(edge_data.keys())[0]]
+                    
+                    p_time += d.get('travel_time_sec', 60) / 60.0
+                    mode = d.get('mode', 'walk')
+                    length = d.get('length', 0) / 1000.0
+                    
+                    if mode == 'walk':
+                        p_walk_dist += length
+                    elif mode == 'transfer':
+                        p_walk_dist += length
+                        p_transfers += 1
+                    elif mode == 'bus':
+                        p_bus_dist += length
+                    elif mode == 'tram':
+                        p_tram_dist += length
+                    elif mode == 'transit':
+                        p_bus_dist += length
                             
             # Estimate shares
             total_dist = max(p_walk_dist + p_bus_dist + p_tram_dist, 0.1)
@@ -66,8 +72,8 @@ class PathMultimodalEvaluator:
             # 1.90 EUR flat ticket if any transit is used
             p_cost = 1.90 if (p_bus_dist > 0 or p_tram_dist > 0) else 0.0
             
-            # Emissions: Bus = 80 gCO2/km, Tram = 35 gCO2/km
-            p_emissions = (p_bus_dist * 80.0) + (p_tram_dist * 35.0)
+            # Emissions: Bus = 80 gCO2/km, Tram = 35 gCO2/km. Converted to kgCO2e
+            p_emissions = ((p_bus_dist * 80.0) + (p_tram_dist * 35.0)) / 1000.0
             
             travel_time_min[i] = p_time
             cost[i] = p_cost
@@ -114,9 +120,10 @@ class PathMultimodalEvaluator:
         g1_budget = np.maximum(0, (cost - budget) / max(budget, 0.1))
         g2_time = np.maximum(0, (travel_time_min - max_time) / max(max_time, 1.0))
         g3_walk = np.maximum(0, (walk_distances - max_walk) / max(max_walk, 0.1))
+        g4_invalid = invalid_paths
         
         F = np.column_stack([travel_time_min, cost, emissions, 1.0 - comfort_score])
-        G = np.column_stack([g1_budget, g2_time, g3_walk])
+        G = np.column_stack([g1_budget, g2_time, g3_walk, g4_invalid])
         
         meta = {
             "dominant_mode": np.array(dominant_modes),
