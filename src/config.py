@@ -127,53 +127,67 @@ DEFAULT_NORMALIZATION = NormalizationConfig()
 DEFAULT_SCENARIO = ScenarioConfig()
 DEFAULT_BENCHMARK = BenchmarkConfig()
 
-def resolve_population_size(algorithm: str, plan: str, n_reference_directions: int = None) -> int:
+def resolve_population_size(
+    algorithm: str,
+    plan: str,
+    n_reference_directions: int = None,
+    requested_population_size: int = None,
+) -> int:
     """
     Resolve the explicit population size used for a given algorithm and experimental plan.
     This replaces the implicit `max(population_size, len(ref_dirs))` to ensure
     reproducibility and strict adherence to the experimental protocol.
     """
+    resolved_size = None
+    
     # Main plan and Convergence plan (150 profiles / 10 profiles)
     if plan in ["main", "convergence"]:
         if algorithm == "nsga2":
-            return 168
+            resolved_size = 168
         elif algorithm in ["pi_nsga3", "pi_nsga3_stab", "pi_nsga3_raw"]:
-            return 170
+            resolved_size = 170
             
     # Extended benchmark plan (30 profiles)
     elif plan == "extended":
         if algorithm == "nsga2":
-            return 128
+            resolved_size = 128
         elif algorithm == "smsemoa":
-            return 128
+            resolved_size = 128
         elif algorithm in ["pi_nsga3", "pi_nsga3_stab"]:
             # p=7, M=4 -> 120 canonical directions + 5 anchors = 125
-            return 125
+            resolved_size = 125
         elif algorithm == "moead":
             # p=7, M=4 -> 120 directions
-            return 120
+            resolved_size = 120
 
     # Ablation plan (30 profiles)
     elif plan == "ablation":
         if algorithm == "nsga2":
-            return 168
+            resolved_size = 168
         elif algorithm == "canonical_nsga3":
             # p=8, M=4 -> 165 directions
-            return 165
+            resolved_size = 165
         elif algorithm in ["pi_nsga3_raw", "pi_nsga3_stab", "pi_nsga3"]:
-            return 170
+            resolved_size = 170
             
     # Popsize equalization plan
     elif plan == "equalization":
-        return 170
+        resolved_size = 170
 
     # Verification plan
-    elif plan == "verification_plan":
-        return n_reference_directions if n_reference_directions is not None else 8
+    elif plan in ["verification", "verification_plan"]:
+        if requested_population_size is None:
+            resolved_size = 8
+        else:
+            resolved_size = int(requested_population_size)
 
-    # Fallback to default explicit size if n_reference_directions is provided
-    if n_reference_directions is not None:
-        return n_reference_directions
+    if resolved_size is None:
+        if n_reference_directions is not None:
+            resolved_size = n_reference_directions
+        else:
+            raise ValueError(f"Undefined explicit population size for algorithm '{algorithm}' in plan '{plan}'.")
+
+    if resolved_size < 4:
+        raise ValueError(f"Population size must be at least 4, got {resolved_size}")
         
-    raise ValueError(f"Undefined explicit population size for algorithm '{algorithm}' in plan '{plan}'.")
-
+    return resolved_size

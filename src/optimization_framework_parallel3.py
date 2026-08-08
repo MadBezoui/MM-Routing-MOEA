@@ -31,6 +31,22 @@ Config.warnings["not_compiled"] = False
 
 ObjectiveEvaluator = Callable[[np.ndarray, Dict[str, object], Dict[str, object], object], Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]]
 
+def compute_feasible_mask(
+    G: np.ndarray,
+    tolerance: float = 1e-12,
+) -> np.ndarray:
+    if G is None:
+        raise ValueError("G cannot be None")
+    G_arr = np.asarray(G, dtype=float)
+    if G_arr.ndim == 1:
+        G_arr = G_arr.reshape(-1, 1)
+    elif G_arr.ndim != 2:
+        raise ValueError("G must be a 1D or 2D array")
+    if not np.isfinite(G_arr).all():
+        raise ValueError("G contains non-finite values")
+    return np.all(G_arr <= tolerance, axis=1)
+
+
 
 @dataclass
 class AlgorithmRunOutput:
@@ -98,16 +114,24 @@ class MetricsCallback(Callback):
         pop = algorithm.pop
         F = pop.get("F")
         G = pop.get("G")
-        feasible = np.all(G <= 0, axis=1) if G is not None and len(np.shape(G)) > 1 else (G <= 0 if G is not None else np.ones(len(F), dtype=bool))
-        feasible_F = F[feasible] if feasible.any() else np.empty((0, F.shape[1]))
+        feasible = compute_feasible_mask(G) if G is not None else np.ones(len(F), dtype=bool)
+        feasible_F = (
+            F[feasible]
+            if feasible.any()
+            else np.empty((0, F.shape[1]), dtype=float)
+        )
 
         hv = 0.0
-        if self.reference_point is not None and feasible_F.size:
-            hv = float(HV(ref_point=self.reference_point)(feasible_F))
-
         igd = np.nan
-        if self.reference_front is not None and feasible_F.size:
-            igd = float(IGD(self.reference_front)(feasible_F))
+        if feasible_F.size > 0:
+            if self.reference_point is not None:
+                inside_reference = np.all(feasible_F <= self.reference_point, axis=1)
+                valid_F = feasible_F[inside_reference]
+                if valid_F.size > 0:
+                    hv = float(HV(ref_point=self.reference_point)(valid_F))
+            
+            if self.reference_front is not None:
+                igd = float(IGD(self.reference_front)(feasible_F))
 
         spacing = compute_spacing(feasible_F) if feasible_F.size else np.nan
         self.data["history"].append(
@@ -151,15 +175,15 @@ def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weight
     return np.unique(np.round(merged, 6), axis=0)
 
 
-def make_algorithm(name: str, problem: Problem, population_size: int, n_partitions: int, crossover_prob: float, crossover_eta: float, mutation_eta: float, priority_weights: Optional[Sequence[float]] = None, plan: str = "main"):
+def make_algorithm(name: str, problem: Problem, population_size: int, n_partitions: int, crossover_prob: float, crossover_eta: float, mutation_eta: float, priority_weights: Optional[Sequence[float]] = None, plan: str = "main", seed: int = 42):
     is_discrete = hasattr(problem, "_evaluator") and type(problem._evaluator).__name__ == "PathMultimodalEvaluator"
     
     if is_discrete and getattr(getattr(problem, 'scenario', None), 'G', None) is not None:
         from src.network.operators import PathSampling, PathCrossover, PathMutation, PathDuplicateElimination
         common = dict(
-            sampling=PathSampling(problem.scenario.G, problem.scenario.origins, problem.scenario.destinations),
-            crossover=PathCrossover(prob=crossover_prob),
-            mutation=PathMutation(problem.scenario.G, prob=0.1),
+            sampling=PathSampling(problem.scenario.G, problem.scenario.origins, problem.scenario.destinations, seed=seed),
+            crossover=PathCrossover(prob=crossover_prob, seed=seed),
+            mutation=PathMutation(problem.scenario.G, prob=0.1, seed=seed),
             eliminate_duplicates=PathDuplicateElimination(),
         )
     else:
@@ -177,7 +201,12 @@ def make_algorithm(name: str, problem: Problem, population_size: int, n_partitio
         ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=priority_weights)
     
     # Enforce population size explicitly based on the experimental plan
-    resolved_pop_size = resolve_population_size(lname, plan, len(ref_dirs) if ref_dirs is not None else population_size)
+    resolved_pop_size = resolve_population_size(
+        lname,
+        plan,
+        n_reference_directions=len(ref_dirs) if ref_dirs is not None else None,
+        requested_population_size=population_size
+    )
     
     if lname == "nsga2":
         return NSGA2(pop_size=resolved_pop_size, **common)
@@ -217,6 +246,7 @@ def run_single_algorithm(
         mutation_eta=mutation_eta,
         priority_weights=priority_weights,
         plan=plan,
+        seed=seed,
     )
     callback = MetricsCallback(reference_front=reference_front, reference_point=reference_point)
     start = time.perf_counter()
@@ -229,12 +259,17 @@ def run_single_algorithm(
     if G is None:
         G = np.zeros((len(F), 1))
     G = np.asarray(G)
-    feasible = np.all(G <= 0, axis=1) if G.ndim > 1 else (G <= 0)
+    G = np.asarray(G)
+    feasible = compute_feasible_mask(G) if G is not None else np.ones(len(F), dtype=bool)
 
     final_df = pd.DataFrame(X, columns=[f"x{i}" for i in range(problem.n_var)])
     for j in range(problem.n_obj):
         final_df[f"obj_{j+1}"] = F[:, j]
-    final_df["constraint_violation"] = G.sum(axis=1) if G.ndim > 1 else G
+    final_df["g_invalid"] = G[:, 0] if G.shape[1] > 0 else 0.0
+    final_df["g_budget"] = G[:, 1] if G.shape[1] > 1 else 0.0
+    final_df["g_time"] = G[:, 2] if G.shape[1] > 2 else 0.0
+    final_df["g_walk"] = G[:, 3] if G.shape[1] > 3 else 0.0
+    final_df["constraint_violation"] = np.maximum(G, 0.0).sum(axis=1) if G.ndim > 1 else np.maximum(G, 0.0)
     final_df["feasible"] = feasible
     final_df["profile_id"] = problem.profile.get("profile_id", "unknown")
     final_df["algorithm"] = algorithm_name.lower()

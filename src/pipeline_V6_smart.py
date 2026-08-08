@@ -231,7 +231,11 @@ def build_reference_point_factory(survey):
         max_cost = max(15.0, 2.0 * budget + 3.0)
         max_emissions = max(2.5, 0.22 * d + 0.25)
         max_discomfort = 1.05
-        return np.array([max_time, max_cost, max_emissions, max_discomfort], dtype=float)
+        ret = np.array([max_time, max_cost, max_emissions, max_discomfort], dtype=float)
+        assert ret.shape == (4,)
+        assert np.all(np.isfinite(ret))
+        assert np.all(ret > 0)
+        return ret
     return _factory
 
 
@@ -381,10 +385,19 @@ def build_problem_factory(survey, comfort_predictor, n_var: int = 5, n_obj: int 
             xu=[1.0] * local_n_var if evaluator_type != "discrete" else None,
             evaluator=local_evaluator,
             profile=profile, extras={}, scenario=scenario_copy,
-            n_ieq_constr=4,
+            n_ieq_constr=4 if evaluator_type == "discrete" else 3,
         )
 
     return _factory
+
+VALID_ALGORITHMS = {
+    "nsga2",
+    "canonical_nsga3",
+    "pi_nsga3_raw",
+    "pi_nsga3_stab",
+    "moead",
+    "smsemoa",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +625,9 @@ def execute_plan(
     for algo, seeds in plan.seeds_by_algorithm.items():
         if len(seeds) == 0:
             continue
+        if algo not in VALID_ALGORITHMS:
+            raise ValueError(f"Ambiguous identifier '{algo}'. Use 'canonical_nsga3', 'pi_nsga3_raw', or 'pi_nsga3_stab'.")
+            
         print(f"  [exec] {plan.name} | algo={algo} | seeds={len(seeds)} | gens={plan.n_generations} | pop={plan.population_size} | workers={max_workers}")
         try:
             run_algorithm_suite_parallel3_checkpointed(
