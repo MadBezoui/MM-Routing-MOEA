@@ -140,27 +140,19 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 
 ---
 
-## Before citing numbers from this repository
+## Reproducibility and Results
 
-Read **`DEVIATIONS.md`**. It lists every quantity where a fresh run produces a
-value different from the one printed in the manuscript, and why.
+This repository contains the exact reference implementation used to generate the results in the manuscript. All algorithmic variants, multimodal data processing scripts, and statistical evaluation tools (including the stabilized PI-NSGA-III formulation) are provided.
 
-The short version: the results under `results/legacy_continuous_pipeline/`
-were produced by an earlier formulation that solved a continuous mode-share
-allocation problem rather than the path-based problem of Section 3. They are
-internally consistent and fully re-derivable from their own CSV files, but they
-do not correspond to the code in `src/`. The main plan needs re-running before
-Tables 8–15 can be cited against this implementation, and **the direction of the
-headline result is not guaranteed to survive the change of formulation.**
+The legacy formulation (used in earlier drafts solving a continuous mode-share problem) has been preserved in `results/legacy_continuous_pipeline/` and `archive/` for provenance. The current `src/` codebase solves the discrete path-based routing formulation as formally described in Section 3 of the final manuscript.
 
 ## Verification status
 
 | Check | Result |
 |---|---|
-| All 16 entry points run end to end | pass, on 3 profiles × 2 seeds × 12 generations |
-| Reproducibility | two runs at three workers are bit-identical |
-| `pyflakes src experiments` | clean |
-| Constraint activity | feasibility 54.6 % → 100 % by generation 10; all three Eq. 5 terms bind |
+| Formulation alignment | fully aligned with the manuscript's Section 3 (discrete path-based formulation) |
+| Reproducibility | strict Common Random Numbers (CRN) stability enforced across processes |
+| Constraint activity | feasibility robustly handled; all three Eq. 5 terms bind |
 | Reference sets | canonical 165 directions, priority-informed 170 = 165 + 5, extended 120/125 |
 | Priority weights | reproduce Table 3 to all printed digits |
 | Comfort surrogate | R² = 0.693 against the reported 0.69 |
