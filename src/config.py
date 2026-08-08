@@ -270,7 +270,7 @@ POPULATION_SIZES: Dict[str, Dict[str, int]] = {
     "extended": {
         "nsga2": 128, "smsemoa": 128,
         "pi_nsga3": 128, "pi_nsga3_raw": 128, "pi_nsga3_stab": 128,
-        "canonical_nsga3": 120, "moead": 125,
+        "canonical_nsga3": 128, "moead": 128,
     },
     "ablation": {
         "nsga2": 168,

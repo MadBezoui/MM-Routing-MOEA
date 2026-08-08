@@ -1,17 +1,17 @@
 descriptor,value
-Number of nodes |V|,301
-Number of edges |E|,1635
-Edges by mode - walk,298 (18.2%)
-Edges by mode - bike,295 (18.0%)
-Edges by mode - bus,553 (33.8%)
-Edges by mode - tram,192 (11.7%)
-Edges by mode - car,297 (18.2%)
-"Mean node degree (undirected, 2|E|/|V|)",10.86
-Mean node degree (simple graph),2.86
-Median node degree,3.0
-Max node degree,8
-"Mean shortest-path length (all modes, edges)",12.26
-Mean feasible multimodal paths per OD pair,5.716666666666667
+Number of nodes |V|,316
+Number of edges |E|,5033
+Edges by mode - walk,1496 (29.7%)
+Edges by mode - bike,1518 (30.2%)
+Edges by mode - bus,573 (11.4%)
+Edges by mode - tram,192 (3.8%)
+Edges by mode - car,1254 (24.9%)
+"Mean node degree (undirected, 2|E|/|V|)",31.85
+Mean node degree (simple graph),5.79
+Median node degree,6.0
+Max node degree,10
+"Mean shortest-path length (all modes, edges)",8.64
+Mean feasible multimodal paths per OD pair,149.1
 Median feasible paths per OD pair,0.0
-Number of transfer hubs (>= 3 modes),299
+Number of transfer hubs (>= 3 modes),314
 Number of bus/tram interchange hubs,55

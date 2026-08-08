@@ -109,11 +109,11 @@ class NetworkBuildConfig:
     #: the walking-distance constraint of Eq. 5 can never bind.  Denser
     #: settings shorten paths only marginally.
     walk_cutoff_km: float = 1.5
-    walk_neighbours: int = 1
+    walk_neighbours: int = 4
     bike_cutoff_km: float = 3.0
-    bike_neighbours: int = 1
+    bike_neighbours: int = 4
     car_cutoff_km: float = 5.0
-    car_neighbours: int = 1
+    car_neighbours: int = 3
 
     #: Road links are bidirectional at the facility level: a traveller who can
     #: walk, cycle or drive from A to B can make the return trip.  Without this
@@ -122,7 +122,7 @@ class NetworkBuildConfig:
     #: mode-dominated route family is realisable.  One-way restrictions are
     #: still honoured *inside* the road network when the link distance is
     #: computed; they are not meaningful between consolidated facilities.
-    symmetric_road_layers: bool = False
+    symmetric_road_layers: bool = True
 
     #: Free-flow speeds (km/h) used to convert road length into traversal time.
     walk_speed_kmph: float = 4.5

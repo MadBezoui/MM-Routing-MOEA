@@ -94,7 +94,7 @@ python -m src.pipeline_V6_smart --output-dir results/outputs_main \
 python -m src.analytics_V6 --runs results/outputs_main --out results/analytics
 ```
 
-`REPRODUCE.md` maps every manuscript table and figure to its command.
+`MANUSCRIPT_TRACEABILITY.md` maps every manuscript table and figure to its script and output.
 
 Runs are checkpointed per `(profile, algorithm, seed)`, so an interrupted
 experiment resumes where it stopped.
@@ -140,9 +140,7 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 
 ## Reproducibility and Results
 
-This repository contains the exact reference implementation used to generate the results in the manuscript. All algorithmic variants, multimodal data processing scripts, and statistical evaluation tools (including the stabilized PI-NSGA-III formulation) are provided.
-
-The codebase solves the discrete path-based routing formulation as formally described in Section 3 of the final manuscript.
+This repository contains the current path-encoded implementation of the formulation described in Section 3. The full manuscript results are being regenerated; numerical results from the superseded formulation must not be attributed to this implementation.
 
 ## Verification status
 

@@ -11,5 +11,11 @@ All publicly released datasets (`data/survey_results/`) have been rigorously ano
 ## Informed Consent
 Participants were informed of the purpose of the study (modeling multimodal transportation preferences) and gave explicit consent for their anonymized responses to be used for scientific research and published as part of the reproducibility package for the corresponding manuscript.
 
-## Reuse
-The dataset is intended solely for reproducing the experiments described in the manuscript and for further non-commercial academic research in transportation engineering and multi-objective optimization.
+## Licensing and Usage Constraints
+
+This repository employs a dual-licensing structure to respect the origin of its components:
+
+- **Source Code**: MIT License (see `LICENSE`), permitting open reuse and modification.
+- **OpenStreetMap Data**: Open Data Commons Open Database License (ODbL) v1.0. Any derived network artifacts must carry the same ODbL terms.
+- **GTFS Timetables**: Subject to the original open data license of the transit authority (Compagnie des Transports Strasbourgeois).
+- **Survey Data (`data/survey_results/`)**: Released exclusively for **academic, non-commercial research** regarding multimodal routing and user preferences. The MIT license of the software codebase does *not* grant commercial usage rights to this human-subjects dataset.

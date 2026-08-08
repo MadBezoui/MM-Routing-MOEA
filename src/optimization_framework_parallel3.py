@@ -416,15 +416,20 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
     if pop_ckpt.exists() and hist_ckpt.exists():
         return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), True
 
-    # Deterministic RNG seeding per worker to avoid shared state leaks
-    seed_str = f"{seed}_{profile_id}_{algo}_{plan}"
-    hash_val = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest(), 16) % (2**32)
-    np.random.seed(hash_val)
-    random.seed(hash_val)
+    # 1. Deterministic scenario seed (Common Random Numbers across algorithms)
+    seed_scenario_str = f"{seed}_{profile_id}_{plan}"
+    hash_scenario = int(hashlib.sha256(seed_scenario_str.encode("utf-8")).hexdigest(), 16) % (2**32)
+    
+    # 2. Deterministic algorithm internal seed (per algorithm execution)
+    seed_algo_str = f"{seed}_{profile_id}_{algo}_{plan}"
+    hash_algo = int(hashlib.sha256(seed_algo_str.encode("utf-8")).hexdigest(), 16) % (2**32)
 
-    problem = problem_factory(profile, scenario, hash_val)
+    np.random.seed(hash_algo)
+    random.seed(hash_algo)
+
+    problem = problem_factory(profile, scenario, hash_scenario)
     output = run_single_algorithm(
-        problem=problem, algorithm_name=algo, seed=hash_val,
+        problem=problem, algorithm_name=algo, seed=hash_algo,
         n_generations=n_generations, plan=plan, n_partitions=n_partitions,
         crossover_prob=crossover_prob, crossover_eta=crossover_eta,
         mutation_eta=mutation_eta,
@@ -440,7 +445,7 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
     if len(output.history):
         output.history["os"] = platform.system()
         output.history["python_version"] = sys.version.split(" ")[0]
-        output.history["executor_seed"] = hash_val
+        output.history["executor_seed"] = hash_algo
 
     output.final_population.to_csv(pop_ckpt, index=False)
     output.history.to_csv(hist_ckpt, index=False)
