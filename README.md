@@ -136,7 +136,7 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 `data/raw/checksums.sha256`.
 
 > [!NOTE]
-> The uncompressed `data/raw/strasbourg.osm` file (346 MB) exceeds GitHub's 100 MB file size limit and is therefore not tracked in the repository. Please download the original snapshot via the Geofabrik link provided in `sources.json`.
+> The uncompressed `data/raw/strasbourg.osm` file (346 MB) exceeds GitHub's 100 MB file size limit and is therefore not tracked in the repository. Please download the original snapshot ([alsace-260101.osm.pbf](https://download.geofabrik.de/europe/france/alsace-260101.osm.pbf)) and extract it.
 
 ---
 
