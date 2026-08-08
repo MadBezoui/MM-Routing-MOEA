@@ -22,6 +22,7 @@ they are rejected by the topological-validity check of
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Any, Dict, List, Tuple
 
 import networkx as nx
@@ -280,8 +281,14 @@ class PathMultimodalEvaluator:
         if self._pregenerated_scenarios is None:
             profile_id = str(profile.get("profile_id", "unknown"))
             # Common random numbers: scenarios fixed per (profile, seed)
-            seed = (hash(profile_id) % (2**31)) + self.algorithm_seed
-            rng = np.random.default_rng(seed)
+            profile_hash = int.from_bytes(
+                hashlib.sha256(profile_id.encode("utf-8")).digest()[:8], "little"
+            )
+            seed_sequence = np.random.SeedSequence([
+                profile_hash & 0xFFFFFFFF,
+                self.algorithm_seed & 0xFFFFFFFF,
+            ])
+            rng = np.random.default_rng(seed_sequence)
             self._pregenerated_scenarios = [self._draw_factors(rng) for _ in range(self.n_monte_carlo)]
 
         f1 = np.zeros(n)

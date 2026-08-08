@@ -185,20 +185,24 @@ class MetricsCallback(Callback):
             feasible = np.asarray(G <= 0).ravel()
         else:
             feasible = np.ones(len(F), dtype=bool)
-        feasible_F = F[feasible] if feasible.any() else F
+        feasible_F = F[feasible]
 
         hv = np.nan
-        if self.reference_point is not None and feasible_F.size:
-            hv = float(HV(ref_point=self.reference_point)(feasible_F))
         igd = np.nan
-        if self.reference_front is not None and feasible_F.size:
-            igd = float(IGD(self.reference_front)(feasible_F))
+        spacing = np.nan
+        
+        if feasible_F.size:
+            if self.reference_point is not None:
+                hv = float(HV(ref_point=self.reference_point)(feasible_F))
+            if self.reference_front is not None:
+                igd = float(IGD(self.reference_front)(feasible_F))
+            spacing = compute_spacing(feasible_F)
 
         self.data["history"].append({
             "generation": algorithm.n_gen,
             "hypervolume": hv,
             "igd": igd,
-            "spacing": compute_spacing(feasible_F) if feasible_F.size else np.nan,
+            "spacing": spacing,
             "feasible_ratio": float(np.mean(feasible)),
             "n_feasible": int(np.sum(feasible)),
             "population_size": int(len(pop)),
