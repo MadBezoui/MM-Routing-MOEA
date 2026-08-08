@@ -67,10 +67,6 @@ if __name__ == "__main__":
     # If it doesn't exist, we will use a dummy raw weight for demonstration
     raw_path = "outputs_surrogate/objective_weights_raw.json"
     if not Path(raw_path).exists():
-        logger.info(f"{raw_path} not found. Creating dummy raw weights for demonstration.")
-        Path("outputs_surrogate").mkdir(parents=True, exist_ok=True)
-        dummy = {"time": 0.1, "cost": 0.1, "emissions": 0.05, "comfort": 0.75}
-        with open(raw_path, "w") as f:
-            json.dump(dummy, f)
+        raise FileNotFoundError(f"Raw weights file not found at {raw_path}. You must generate real survey-based weights first.")
             
     run_stabilization(raw_path, "outputs_surrogate")

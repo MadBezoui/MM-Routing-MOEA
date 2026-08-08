@@ -44,21 +44,33 @@ def run_experiments():
     osm_nodes = [n for n, d in G.nodes(data=True) if d.get('type') != 'transit_stop']
     
     logger.info("Assigning Origin and Destination nodes to profiles...")
-    # This is a heuristic to assign O-D pairs for the paths based on distance
-    for plan in plans:
-        # To make things significantly faster, we reduce the generations and population size
-        # since discrete path routing is very expensive on a 500k node graph
-        plan.n_generations = 10
-        plan.population_size = 32
-        
-        for idx in plan.profiles_df.index:
-            # Randomly assign a node as origin
-            O = random.choice(osm_nodes)
-            # Randomly assign another node as destination (in reality, we'd use KDTree to match distance_km exactly, 
-            # but for this script a random pair suffices to execute the genetic algorithms)
-            D = random.choice(osm_nodes)
-            plan.profiles_df.at[idx, 'origin_node'] = O
-            plan.profiles_df.at[idx, 'dest_node'] = D
+    od_path = Path("data/processed/od_pairs.csv")
+    if od_path.exists():
+        import pandas as pd
+        od_df = pd.read_csv(od_path)
+        od_dict = od_df.set_index('profile_id').to_dict(orient='index')
+        for plan in plans:
+            for idx, row in plan.profiles_df.iterrows():
+                pid = row['profile_id']
+                if pid in od_dict:
+                    plan.profiles_df.at[idx, 'origin_node'] = str(od_dict[pid]['origin_node'])
+                    plan.profiles_df.at[idx, 'dest_node'] = str(od_dict[pid]['dest_node'])
+    else:
+        # Generate and save fixed OD pairs for reproducibility
+        import pandas as pd
+        records = []
+        for plan in plans:
+            for idx, row in plan.profiles_df.iterrows():
+                O = random.choice(osm_nodes)
+                D = random.choice(osm_nodes)
+                plan.profiles_df.at[idx, 'origin_node'] = O
+                plan.profiles_df.at[idx, 'dest_node'] = D
+                records.append({
+                    "profile_id": row['profile_id'],
+                    "origin_node": O,
+                    "dest_node": D
+                })
+        pd.DataFrame(records).drop_duplicates('profile_id').to_csv(od_path, index=False)
             
     logger.info("Training comfort models...")
     comfort_cfg = ComfortTrainingConfig()
@@ -84,7 +96,7 @@ def run_experiments():
     logger.info("Starting Plan Executions (Discrete Path Routing Mode)...")
     for plan in plans:
         logger.info(f"Executing plan {plan.name}")
-        # The key change is here: we pass plan="discrete" to trigger our new operators
+        # The key change is here: we pass plan_type as the plan name to respect the sizes in resolve_population_size
         execute_plan(
             plan=plan,
             problem_factory=problem_factory,
@@ -93,7 +105,7 @@ def run_experiments():
             priority_weights=priority_weights,
             ref_point_factory=ref_point_factory,
             max_workers=args.max_workers,
-            plan_type="discrete",
+            plan_type=plan.name,
         )
         
         logger.info(f"Recovering metrics for {plan.name}...")

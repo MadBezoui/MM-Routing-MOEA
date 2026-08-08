@@ -12,8 +12,27 @@ from scipy.spatial import KDTree
 
 logger = logging.getLogger(__name__)
 
+import subprocess
+
+def haversine(lon1, lat1, lon2, lat2):
+    R = 6371000  # radius of Earth in meters
+    phi1 = np.radians(lat1)
+    phi2 = np.radians(lat2)
+    delta_phi = np.radians(lat2 - lat1)
+    delta_lambda = np.radians(lon2 - lon1)
+    a = np.sin(delta_phi / 2)**2 + np.cos(phi1) * np.cos(phi2) * np.sin(delta_lambda / 2)**2
+    return 2 * R * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+
 def build_multimodal_graph(osm_path: str, gtfs_path: str, out_path: str) -> None:
-    """Builds an integrated multimodal graph from OSM XML and GTFS ZIP."""
+    """Builds an integrated multimodal graph from OSM XML/PBF and GTFS ZIP."""
+    
+    # If the input is PBF, convert it to XML first
+    if osm_path.endswith(".pbf"):
+        xml_path = osm_path.replace(".pbf", ".osm")
+        logger.info(f"Converting {osm_path} to {xml_path} via osmium...")
+        subprocess.run(["osmium", "cat", osm_path, "-o", xml_path, "--overwrite"], check=True)
+        osm_path = xml_path
+        
     logger.info(f"Loading OSM walking network from {osm_path}...")
     
     # We load walking paths from OSM
@@ -75,18 +94,37 @@ def build_multimodal_graph(osm_path: str, gtfs_path: str, out_path: str) -> None
         am_st['next_stop'] = am_st.groupby('trip_id')['stop_id'].shift(-1)
         am_st['travel_time'] = am_st.groupby('trip_id')['arr_time_sec'].shift(-1) - am_st['dep_time_sec']
         
-        edges_df = am_st.dropna(subset=['next_stop']).groupby(['stop_id', 'next_stop']).agg(
+        # Merge route_type into trips to identify mode
+        am_trips_df = trips[['trip_id', 'route_id']].merge(valid_routes[['route_id', 'route_type']], on='route_id')
+        am_st = am_st.merge(am_trips_df[['trip_id', 'route_type']], on='trip_id', how='left')
+        
+        edges_df = am_st.dropna(subset=['next_stop']).groupby(['stop_id', 'next_stop', 'route_type']).agg(
             avg_travel_time=('travel_time', 'mean'),
             freq=('trip_id', 'count')
         ).reset_index()
         
+        # Build coordinates dictionary for fast distance computation
+        stop_coords_dict = {row['stop_id']: (row['stop_lat'], row['stop_lon']) for _, row in transit_stops.iterrows()}
+        
         for _, row in edges_df.iterrows():
             u = f"gtfs_{row['stop_id']}"
             v = f"gtfs_{row['next_stop']}"
+            
+            # Distance computation using haversine
+            if row['stop_id'] in stop_coords_dict and row['next_stop'] in stop_coords_dict:
+                lat1, lon1 = stop_coords_dict[row['stop_id']]
+                lat2, lon2 = stop_coords_dict[row['next_stop']]
+                dist_m = haversine(lon1, lat1, lon2, lat2)
+            else:
+                dist_m = 500.0 # fallback
+                
+            # Mode identification
+            mode_str = "tram" if row['route_type'] == 0 else "bus"
+            
             # Add average waiting time of (3 hours / freq) / 2
             wait_time = (3 * 3600 / max(1, row['freq'])) / 2
             
-            G.add_edge(u, v, mode='transit', travel_time_sec=row['avg_travel_time'] + wait_time, freq=row['freq'])
+            G.add_edge(u, v, mode=mode_str, travel_time_sec=row['avg_travel_time'] + wait_time, freq=row['freq'], length=dist_m)
             
         logger.info(f"Added {len(edges_df)} transit edges.")
         
@@ -129,7 +167,7 @@ def build_multimodal_graph(osm_path: str, gtfs_path: str, out_path: str) -> None
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    osm_path = "data/raw/strasbourg.osm"
+    osm_path = "data/raw/strasbourg.osm.pbf"
     gtfs_path = "data/raw/strasbourg_gtfs.zip"
     out_path = "data/processed/strasbourg_multimodal.graphml"
     

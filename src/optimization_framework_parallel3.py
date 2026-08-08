@@ -132,7 +132,7 @@ def compute_spacing(F: np.ndarray) -> float:
     return float(np.std(nearest, ddof=1)) if len(nearest) > 1 else 0.0
 
 
-def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weights: Optional[Sequence[float]] = None) -> np.ndarray:
+def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weights: Optional[Sequence[float]] = None, blend_ratio: float = 0.3) -> np.ndarray:
     base = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
     if priority_weights is None:
         return base
@@ -144,7 +144,7 @@ def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weight
     anchors = [w]
     eye = np.eye(n_obj)
     for e in eye:
-        anchors.append(0.7 * w + 0.3 * e)
+        anchors.append((1.0 - blend_ratio) * w + blend_ratio * e)
     anchors = np.asarray(anchors)
     anchors = anchors / anchors.sum(axis=1, keepdims=True)
     merged = np.vstack([base, anchors])
@@ -152,12 +152,15 @@ def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weight
 
 
 def make_algorithm(name: str, problem: Problem, population_size: int, n_partitions: int, crossover_prob: float, crossover_eta: float, mutation_eta: float, priority_weights: Optional[Sequence[float]] = None, plan: str = "main"):
-    if plan == "discrete" and getattr(getattr(problem, 'scenario', None), 'G', None) is not None:
-        from src.network.operators import PathSampling, PathCrossover, PathMutation
+    is_discrete = hasattr(problem, "_evaluator") and type(problem._evaluator).__name__ == "PathMultimodalEvaluator"
+    
+    if is_discrete and getattr(getattr(problem, 'scenario', None), 'G', None) is not None:
+        from src.network.operators import PathSampling, PathCrossover, PathMutation, PathDuplicateElimination
         common = dict(
             sampling=PathSampling(problem.scenario.G, problem.scenario.origins, problem.scenario.destinations),
             crossover=PathCrossover(prob=crossover_prob),
             mutation=PathMutation(problem.scenario.G, prob=0.1),
+            eliminate_duplicates=PathDuplicateElimination(),
         )
     else:
         common = dict(
@@ -165,8 +168,13 @@ def make_algorithm(name: str, problem: Problem, population_size: int, n_partitio
             crossover=SBX(prob=crossover_prob, eta=crossover_eta),
             mutation=PM(eta=mutation_eta),
         )
-    ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=priority_weights)
     lname = name.lower()
+    
+    # Distinction between Canonical NSGA-III and PI-NSGA-III
+    if lname in ["nsga3", "canonical_nsga3"]:
+        ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=None)
+    else:
+        ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=priority_weights)
     
     # Enforce population size explicitly based on the experimental plan
     resolved_pop_size = resolve_population_size(lname, plan, len(ref_dirs) if ref_dirs is not None else population_size)

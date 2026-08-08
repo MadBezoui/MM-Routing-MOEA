@@ -50,17 +50,24 @@ class PathMultimodalEvaluator:
                         elif mode == 'transfer':
                             p_walk_dist += length
                             p_transfers += 1
+                        elif mode == 'bus':
+                            p_bus_dist += length
+                        elif mode == 'tram':
+                            p_tram_dist += length
                         elif mode == 'transit':
-                            p_bus_dist += 1.0 # Approximate 1 km per transit edge
+                            p_bus_dist += length
                             
             # Estimate shares
             total_dist = max(p_walk_dist + p_bus_dist + p_tram_dist, 0.1)
             walk_share = p_walk_dist / total_dist
             bus_share = p_bus_dist / total_dist
             
-            # Simple heuristic
-            p_cost = (p_bus_dist + p_tram_dist) * 0.25
-            p_emissions = p_bus_dist * 0.1
+            # Simple heuristic replaced with real models
+            # 1.90 EUR flat ticket if any transit is used
+            p_cost = 1.90 if (p_bus_dist > 0 or p_tram_dist > 0) else 0.0
+            
+            # Emissions: Bus = 80 gCO2/km, Tram = 35 gCO2/km
+            p_emissions = (p_bus_dist * 80.0) + (p_tram_dist * 35.0)
             
             travel_time_min[i] = p_time
             cost[i] = p_cost
@@ -100,12 +107,16 @@ class PathMultimodalEvaluator:
         
         comfort_score = self.comfort_predictor.predict(comfort_df, self.survey)
         
-        budget_violation = np.maximum(cost - float(profile.get("budget_eur", 5.0)), 0.0)
-        walk_violation = np.maximum(walk_distances - self.survey.walking_threshold_km, 0.0)
-        feasible_violation = budget_violation + walk_violation
+        budget = float(profile.get("budget_eur", 5.0))
+        max_time = float(profile.get("max_time_min", 120.0))
+        max_walk = float(profile.get("max_walk_km", self.survey.walking_threshold_km))
+        
+        g1_budget = np.maximum(0, (cost - budget) / max(budget, 0.1))
+        g2_time = np.maximum(0, (travel_time_min - max_time) / max(max_time, 1.0))
+        g3_walk = np.maximum(0, (walk_distances - max_walk) / max(max_walk, 0.1))
         
         F = np.column_stack([travel_time_min, cost, emissions, 1.0 - comfort_score])
-        G = feasible_violation[:, None]
+        G = np.column_stack([g1_budget, g2_time, g3_walk])
         
         meta = {
             "dominant_mode": np.array(dominant_modes),

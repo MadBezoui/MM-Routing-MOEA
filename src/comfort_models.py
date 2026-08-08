@@ -12,7 +12,18 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from scipy.special import logit, expit
+
+class SigmoidMLPRegressor(MLPRegressor):
+    def fit(self, X, y):
+        # Apply logit transform to bound regression strictly to (0, 1) during training
+        y_trans = logit(np.clip(y, 1e-6, 1 - 1e-6))
+        return super().fit(X, y_trans)
+        
+    def predict(self, X):
+        # Apply expit (sigmoid) to return true probabilities
+        return expit(super().predict(X))
 
 from config import ComfortTrainingConfig, SurveyCalibration
 
@@ -93,7 +104,10 @@ class SurveyInformedComfortFactory:
             "fare_eur", "distance_km", "travel_time_min"
         ]
         
-        groups = df["profile_id"] if "profile_id" in df.columns else np.arange(len(df))
+        if "profile_id" not in df.columns:
+            raise ValueError("Data leakage prevention failed: 'profile_id' is missing from the dataset. Cannot safely perform GroupShuffleSplit.")
+            
+        groups = df["profile_id"]
         gss = GroupShuffleSplit(n_splits=1, test_size=self.config.test_size, random_state=self.config.random_state)
         train_idx, test_idx = next(gss.split(df, groups=groups))
         
@@ -110,7 +124,7 @@ class SurveyInformedComfortFactory:
                     Pipeline(
                         steps=[
                             ("imputer", SimpleImputer(strategy="median")),
-                            ("scaler", StandardScaler()),
+                            ("scaler", MinMaxScaler(feature_range=(0, 1))),
                         ]
                     ),
                     numeric_cols,
@@ -146,7 +160,7 @@ class SurveyInformedComfortFactory:
                         ("preprocess", preprocessor),
                         (
                             "model",
-                            MLPRegressor(
+                            SigmoidMLPRegressor(
                                 hidden_layer_sizes=self.config.hidden_layers,
                                 activation=self.config.activation,
                                 alpha=self.config.alpha,
@@ -195,17 +209,22 @@ class SurveyInformedComfortFactory:
             noisy = base.copy()
             if noise_level > 0:
                 rng = np.random.default_rng(self.config.random_state + int(noise_level * 1000))
-                noisy["comfort_score"] = np.clip(
-                    noisy["comfort_score"] + rng.normal(0, noise_level, size=len(noisy)),
-                    0.0,
-                    1.0,
-                )
+                
+                # Add noise to continuous features, not the target!
+                numeric_cols = ["distance_km", "travel_time_min", "age", "fare_eur"]
+                for col in numeric_cols:
+                    if col in noisy.columns:
+                        # Add Gaussian noise relative to standard deviation
+                        std = max(noisy[col].std(), 0.1)
+                        noisy[col] = noisy[col] + rng.normal(0, noise_level * std, size=len(noisy))
 
             if model_result.model_name == "heuristic_direct":
                 y_pred = HeuristicComfortModel(self.survey).predict(noisy)
             else:
                 from sklearn.model_selection import GroupShuffleSplit
-                groups = noisy["profile_id"] if "profile_id" in noisy.columns else np.arange(len(noisy))
+                if "profile_id" not in noisy.columns:
+                    raise ValueError("Missing 'profile_id' for grouped split in noise robustness.")
+                groups = noisy["profile_id"]
                 gss = GroupShuffleSplit(n_splits=1, test_size=self.config.test_size, random_state=self.config.random_state)
                 train_idx, test_idx = next(gss.split(noisy, groups=groups))
                 train_df = noisy.iloc[train_idx].copy()

@@ -320,12 +320,15 @@ class RealSurveyMultimodalEvaluator:
         })
         comfort_score = self.comfort_predictor.predict(comfort_df, self.survey)
 
-        budget_violation = np.maximum(cost - budget, 0.0)
-        walk_violation = np.maximum(shares[:, 0] * distance_km - self.survey.walking_threshold_km, 0.0)
-        feasible_violation = budget_violation + walk_violation
+        max_time = float(profile.get("max_time_min", 120.0))
+        max_walk = float(profile.get("max_walk_km", self.survey.walking_threshold_km))
+        
+        g1_budget = np.maximum(0, (cost - budget) / max(budget, 0.1))
+        g2_time = np.maximum(0, (travel_time_min - max_time) / max(max_time, 1.0))
+        g3_walk = np.maximum(0, (shares[:, 0] * distance_km - max_walk) / max(max_walk, 0.1))
 
         F = np.column_stack([travel_time_min, cost, emissions, 1.0 - comfort_score])
-        G = feasible_violation[:, None]
+        G = np.column_stack([g1_budget, g2_time, g3_walk])
         meta = {
             "dominant_mode": self.MODES[np.argmax(shares, axis=1)],
             "travel_time_min": travel_time_min,
@@ -378,6 +381,7 @@ def build_problem_factory(survey, comfort_predictor, n_var: int = 5, n_obj: int 
             xu=[1.0] * local_n_var if evaluator_type != "discrete" else None,
             evaluator=local_evaluator,
             profile=profile, extras={}, scenario=scenario_copy,
+            n_ieq_constr=3,
         )
 
     return _factory

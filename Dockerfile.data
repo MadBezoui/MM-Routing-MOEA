@@ -1,0 +1,8 @@
+FROM python:3.11-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        osmium-tool \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+CMD ["python", "scripts/download_network_data.py"]

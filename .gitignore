@@ -1,0 +1,23 @@
+# Large automatically downloaded network data
+data/raw/*.osm.pbf
+data/raw/*.zip
+data/raw/*.md5
+
+# Generated network artefacts
+data/processed/*.graphml
+data/processed/*.gpickle
+data/processed/*.npz
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environments
+.venv/
+venv/
+
+# Temporary downloads
+*.part
+data/raw/
+data/processed/
