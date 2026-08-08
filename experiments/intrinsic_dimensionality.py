@@ -46,34 +46,57 @@ OBJECTIVE_COLUMNS = ["obj_1", "obj_2", "obj_3", "obj_4"]
 # Estimators
 # --------------------------------------------------------------------------
 
-def twonn(points: np.ndarray, discard_fraction: float = 0.1) -> float:
+def twonn(points: np.ndarray, retained_fraction: float = 0.95) -> Dict[str, float]:
     """TwoNN estimator of Facco et al. (2017).
 
-    The largest ``discard_fraction`` of the ratios is dropped before the fit,
+    The largest (1 - retained_fraction) of the ratios is dropped before the fit,
     as recommended by the authors, to limit the influence of the tail where the
     local-density assumption breaks down.
     """
     X = np.unique(np.asarray(points, dtype=float), axis=0)
     n = len(X)
     if n < 10:
-        return float("nan")
+        return {"id": float("nan")}
 
     from scipy.spatial import cKDTree
 
     dist, _ = cKDTree(X).query(X, k=3)
     r1, r2 = dist[:, 1], dist[:, 2]
     valid = (r1 > 0) & (r2 > 0)
+    
+    invalid_or_dup = int((~valid).sum())
+    
     mu = np.sort(r2[valid] / r1[valid])
     mu = mu[mu > 1.0]
     if len(mu) < 10:
-        return float("nan")
+        return {"id": float("nan")}
 
-    keep = int(len(mu) * (1.0 - discard_fraction))
-    mu = mu[:keep]
-    f_emp = np.arange(1, len(mu) + 1) / len(mu)
-    x = np.log(mu)
-    y = -np.log(np.clip(1.0 - f_emp, 1e-12, None))
-    return float(np.dot(x, y) / np.dot(x, x))       # least squares through the origin
+    N = len(mu)
+    keep = max(2, int(np.floor(retained_fraction * N)))
+    mu_trimmed = mu[:keep]
+    
+    ranks = np.arange(1, keep + 1, dtype=float)
+    f_emp = (ranks - 0.5) / N
+    
+    x = np.log(mu_trimmed)
+    y = -np.log1p(-f_emp)
+    
+    # least squares through the origin
+    id_est = float(np.dot(x, y) / np.dot(x, x))
+    
+    # Calculate R2
+    y_pred = id_est * x
+    ss_res = np.sum((y - y_pred)**2)
+    ss_tot = np.sum((y - np.mean(y))**2)
+    r2 = 1 - (ss_res / ss_tot) if ss_tot > 0 else float("nan")
+
+    return {
+        "id": id_est,
+        "n_original": float(n),
+        "n_retained": float(keep),
+        "invalid_or_dup": float(invalid_or_dup),
+        "r2": float(r2)
+    }
 
 
 def levina_bickel(points: np.ndarray, k: int = 10) -> float:
@@ -163,7 +186,7 @@ def estimate(
 
     per_algo = report["per_algorithm"]
     if per_algo:
-        tw = [v["twonn"] for v in per_algo.values() if np.isfinite(v["twonn"])]
+        tw = [v["twonn"]["id"] for v in per_algo.values() if np.isfinite(v["twonn"]["id"])]
         lb = [v["levina_bickel"] for v in per_algo.values() if np.isfinite(v["levina_bickel"])]
         report["cross_algorithm_spread_twonn"] = float(max(tw) - min(tw)) if tw else float("nan")
         report["cross_algorithm_spread_levina_bickel"] = float(max(lb) - min(lb)) if lb else float("nan")

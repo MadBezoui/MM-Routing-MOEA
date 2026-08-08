@@ -113,9 +113,9 @@ def summarise_runtime(raw: pd.DataFrame) -> pd.DataFrame:
 
 def anytime_table(
     history_dirs: Sequence[Path],
-    checkpoints: Sequence[int] = DEFAULT_CHECKPOINTS,
+    fractions: Sequence[float] = (0.25, 0.50, 0.75, 1.0),
 ) -> pd.DataFrame:
-    """Hypervolume at generation ``g`` as a percentage of the terminal value."""
+    """Hypervolume at budget fractions relative to each run's terminal generation."""
     frames: List[pd.DataFrame] = []
     for root in history_dirs:
         for ckpt in Path(root).rglob("checkpoints/history"):
@@ -125,41 +125,58 @@ def anytime_table(
                 except Exception:  # pragma: no cover
                     continue
                 if {"generation", "hypervolume", "profile_id"}.issubset(df.columns):
+                    # Dedup duplicated generations if any
+                    df = df.drop_duplicates(subset=["generation"], keep="last")
+                    df["plan"] = root.name
                     frames.append(df)
     if not frames:
         raise FileNotFoundError(f"no instrumented history under {list(history_dirs)}")
 
     history = pd.concat(frames, ignore_index=True).dropna(subset=["hypervolume"])
-    terminal = history["generation"].max()
-
-    per_run = history.pivot_table(
-        index=["profile_id", "algorithm", "seed"],
-        columns="generation", values="hypervolume",
-    )
-    final = per_run[terminal].replace(0, np.nan)
-
-    available = [g for g in checkpoints if g in per_run.columns]
-    if not available:
-        # The run used a shorter budget than the default checkpoints: fall back
-        # to evenly spaced generations of the budget that was actually used.
-        available = sorted({
-            int(q) for q in np.linspace(max(int(terminal * 0.25), 1), terminal, 6)
-            if q in per_run.columns
-        })
-        logger.warning("default checkpoints absent (terminal generation = %s); "
-                       "using %s instead", terminal, available)
-
+    
+    RUN_KEY = ["plan", "profile_id", "algorithm", "seed"]
+    
+    # Terminal generation per run
+    history["terminal_generation"] = history.groupby(RUN_KEY)["generation"].transform("max")
+    history["budget_fraction"] = history["generation"] / history["terminal_generation"]
+    
     rows: List[Dict[str, object]] = []
-    for g in available:
-        pct = 100.0 * per_run[g] / final
-        by_profile = pct.groupby(level=0).mean()
-        rows.append({
-            "generation": int(g),
-            "budget_vs_terminal": round(float(g) / float(terminal), 2),
-            "mean_hv_pct_of_final": float(pct.mean()),
-            "worst_profile_pct": float(by_profile.min()),
-        })
-    return pd.DataFrame(rows)
+    
+    # For each run, interpolate the hypervolume at the requested fractions
+    for run_id, group in history.groupby(RUN_KEY):
+        # group is sorted by generation
+        g = group.sort_values("generation")
+        x = g["budget_fraction"].to_numpy()
+        y = g["hypervolume"].to_numpy()
+        
+        terminal_hv = y[-1]
+        if terminal_hv <= 0:
+            continue
+            
+        # Interpolate
+        y_interp = np.interp(fractions, x, y)
+        
+        for frac, val in zip(fractions, y_interp):
+            pct = 100.0 * val / terminal_hv
+            rows.append({
+                "plan": run_id[0],
+                "profile_id": run_id[1],
+                "algorithm": run_id[2],
+                "budget_fraction": frac,
+                "pct_of_terminal": pct,
+            })
+            
+    if not rows:
+        return pd.DataFrame()
+        
+    df = pd.DataFrame(rows)
+    # Average across seeds and profiles
+    summary = (
+        df.groupby(["algorithm", "budget_fraction"])["pct_of_terminal"]
+        .agg(["mean", "std", "count"])
+        .reset_index()
+    )
+    return summary
 
 
 # --------------------------------------------------------------------------

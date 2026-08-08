@@ -208,7 +208,18 @@ def assign_od_pairs(
         column = dist_to_dest[:, attractor_pos[d_idx]]
         target = float(row["distance_km"])
         candidates = np.argsort(np.abs(column - target))
-        origin_idx = next((int(c) for c in candidates[:10] if int(c) != d_idx), int(candidates[0]))
+        
+        # Enforce OD feasibility
+        origin_idx = None
+        for c in candidates:
+            c = int(c)
+            if c != d_idx and nx.has_path(G, nodes[c], nodes[d_idx]):
+                origin_idx = c
+                break
+                
+        if origin_idx is None:
+            raise RuntimeError(f"No valid origin found with a path to destination {nodes[d_idx]}")
+            
         origins.append(nodes[origin_idx])
         destinations.append(nodes[d_idx])
         realised.append(float(column[origin_idx]))
@@ -292,14 +303,11 @@ def build_plans(
 # 4. Problem factory
 # ==========================================================================
 
-def build_reference_point_factory(survey):
-    """Per-profile nadir used by the in-run instrumentation only.
-
-    The confirmatory hypervolume of Eq. 12 is recomputed post hoc from the
-    union of all runs; this factory exists purely so that the per-generation
-    convergence curves are on a comparable scale.
-    """
-    def factory(profile: Dict[str, object]) -> np.ndarray:
+class ReferencePointFactory:
+    def __init__(self, survey):
+        self.survey = survey
+        
+    def __call__(self, profile: Dict[str, object]) -> np.ndarray:
         d = float(profile.get("od_distance_km", profile.get("distance_km", 5.0)))
         return np.array([
             max(180.0, 60.0 * d / 3.5 + 30.0),
@@ -307,23 +315,25 @@ def build_reference_point_factory(survey):
             max(2.5, 0.22 * d + 0.25),
             1.05,
         ], dtype=float)
-    return factory
+
+def build_reference_point_factory(survey):
+    """Per-profile nadir used by the in-run instrumentation only."""
+    return ReferencePointFactory(survey)
 
 
-def build_problem_factory(G, survey, comfort_predictor, scenario: ScenarioConfig):
-    """Return a factory producing one path-encoded problem per profile.
+class ProblemFactory:
+    def __init__(self, G, survey, comfort_predictor, scenario: ScenarioConfig):
+        from src.network.operators import MultimodalIndex
+        self.G = G
+        self.survey = survey
+        self.comfort_predictor = comfort_predictor
+        self.scenario = scenario
+        self.shared_index = MultimodalIndex(G)
 
-    The adjacency index of the graph is built once and shared by every problem
-    instance, since it is read-only during the search.
-    """
-    from src.network.operators import MultimodalIndex
-
-    shared_index = MultimodalIndex(G)
-
-    def factory(profile: Dict[str, object], run_scenario: ScenarioConfig, seed: int = 0) -> ProfiledMultimodalProblem:
-        sc = run_scenario or scenario
+    def __call__(self, profile: Dict[str, object], run_scenario: ScenarioConfig, seed: int = 0) -> ProfiledMultimodalProblem:
+        sc = run_scenario or self.scenario
         evaluator = PathMultimodalEvaluator(
-            G, survey, comfort_predictor, scenario=sc,
+            self.G, self.survey, self.comfort_predictor, scenario=sc,
             n_monte_carlo=getattr(sc, "n_monte_carlo", 1),
             comfort_bias=getattr(sc, "comfort_bias", 0.0),
             algorithm_seed=seed,
@@ -333,10 +343,13 @@ def build_problem_factory(G, survey, comfort_predictor, scenario: ScenarioConfig
             evaluator=evaluator, profile=profile, extras={},
             scenario=sc, vtype=object,
         )
-        problem.graph = G
-        problem.graph_index = shared_index
+        problem.graph = self.G
+        problem.graph_index = self.shared_index
         return problem
-    return factory
+
+def build_problem_factory(G, survey, comfort_predictor, scenario: ScenarioConfig):
+    """Return a factory producing one path-encoded problem per profile."""
+    return ProblemFactory(G, survey, comfort_predictor, scenario)
 
 
 # ==========================================================================

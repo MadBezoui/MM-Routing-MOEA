@@ -115,13 +115,18 @@ def run(
     pairwise: List[Dict[str, object]] = []
     for i in range(len(CHAIN)):
         for j in range(i + 1, len(CHAIN)):
-            a, b = CHAIN[j], CHAIN[i]          # sign convention: d_z < 0 favours a
+            a, b = CHAIN[i], CHAIN[j]          # sign convention: d_z < 0 favours b (newer algorithm)
             result = compare(metrics, algo_a=a, algo_b=b)
             pairwise.append({
-                "algorithm_a": LABELS[a], "algorithm_b": LABELS[b],
+                "algorithm_a": a,
+                "algorithm_b": b,
+                "difference_definition": "algorithm_a - algorithm_b",
+                "favoured_when_negative": b,
                 "dz": result["dz_profile_level_confirmatory"],
                 "p": result["wilcoxon_profile_p"],
-                "wins_a": f"{result['profile_wins_a']}/{result['n_profiles']}",
+                "profile_wins_a": result["profile_wins_a"],
+                "profile_wins_b": result["profile_wins_b"],
+                "n_profiles": result["n_profiles"],
                 "mean_diff": result["mean_diff"],
             })
     table15 = pd.DataFrame(pairwise)

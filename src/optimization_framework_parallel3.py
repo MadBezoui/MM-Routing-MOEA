@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing
+import hashlib
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
@@ -413,9 +416,15 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
     if pop_ckpt.exists() and hist_ckpt.exists():
         return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), True
 
-    problem = problem_factory(profile, scenario, seed)
+    # Deterministic RNG seeding per worker to avoid shared state leaks
+    seed_str = f"{seed}_{profile_id}_{algo}_{plan}"
+    hash_val = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest(), 16) % (2**32)
+    np.random.seed(hash_val)
+    random.seed(hash_val)
+
+    problem = problem_factory(profile, scenario, hash_val)
     output = run_single_algorithm(
-        problem=problem, algorithm_name=algo, seed=seed,
+        problem=problem, algorithm_name=algo, seed=hash_val,
         n_generations=n_generations, plan=plan, n_partitions=n_partitions,
         crossover_prob=crossover_prob, crossover_eta=crossover_eta,
         mutation_eta=mutation_eta,
@@ -424,6 +433,15 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
         stabilized_weights=stabilized_weights, raw_weights=raw_weights, rho=rho,
         encoding=encoding, instrumented=instrumented,
     )
+    
+    import platform
+    import sys
+    # Add metadata to history
+    if len(output.history):
+        output.history["os"] = platform.system()
+        output.history["python_version"] = sys.version.split(" ")[0]
+        output.history["executor_seed"] = hash_val
+
     output.final_population.to_csv(pop_ckpt, index=False)
     output.history.to_csv(hist_ckpt, index=False)
     return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), False
@@ -448,6 +466,7 @@ def run_algorithm_suite_parallel3_checkpointed(
     reference_front_factory=None,
     reference_point_factory=None,
     max_workers: int = 3,
+    executor_backend: str = "process",
     encoding: str = "path",
     instrumented: bool = True,
     show_progress: bool = True,
@@ -470,32 +489,54 @@ def run_algorithm_suite_parallel3_checkpointed(
             if len(hist_df):
                 history_frames.append(hist_df)
 
-    with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="moo") as executor:
-        futures = {
-            executor.submit(
-                _worker_task, profile, algorithm, seed, problem_factory, scenario,
-                str(output_path), n_generations, plan, n_partitions,
-                crossover_prob, crossover_eta, mutation_eta,
-                stabilized_weights, raw_weights, rho,
-                reference_front_factory, reference_point_factory,
-                encoding, instrumented,
-            ): (str(profile.get("profile_id", "unknown")), algorithm, seed)
-            for profile, algorithm, seed in tasks
-        }
-        for future in as_completed(futures):
-            profile_id, algorithm, seed = futures[future]
+    if executor_backend == "sequential" or max_workers <= 1:
+        for p, a, s in tasks:
             try:
-                _, done_algo, done_seed, pop_path, hist_path, resumed = future.result()
+                res = _worker_task(
+                    p, a, s, problem_factory, scenario, str(output_path),
+                    n_generations, plan, n_partitions, crossover_prob, crossover_eta,
+                    mutation_eta, stabilized_weights, raw_weights, rho,
+                    reference_front_factory, reference_point_factory, encoding, instrumented
+                )
+                _, done_algo, done_seed, pop_path, hist_path, resumed = res
                 store(pop_path, hist_path)
                 pbar.update(1)
-                pbar.set_postfix_str(
-                    f"{'resume' if resumed else 'done'} {done_algo} {profile_id} s{done_seed}"
-                )
+                pbar.set_postfix_str(f"{'resume' if resumed else 'done'} {done_algo} s{done_seed}")
             except Exception as exc:
                 pbar.close()
-                raise RuntimeError(
-                    f"run failed: algo={algorithm}, profile={profile_id}, seed={seed}: {exc}"
-                ) from exc
+                raise RuntimeError(f"run failed: algo={a}, seed={s}: {exc}") from exc
+    else:
+        if executor_backend == "thread":
+            ctx_executor = ThreadPoolExecutor(max_workers=max_workers)
+        else:
+            ctx_executor = ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context("spawn"))
+
+        with ctx_executor as executor:
+            futures = {
+                executor.submit(
+                    _worker_task, profile, algorithm, seed, problem_factory, scenario,
+                    str(output_path), n_generations, plan, n_partitions,
+                    crossover_prob, crossover_eta, mutation_eta,
+                    stabilized_weights, raw_weights, rho,
+                    reference_front_factory, reference_point_factory,
+                    encoding, instrumented,
+                ): (str(profile.get("profile_id", "unknown")), algorithm, seed)
+                for profile, algorithm, seed in tasks
+            }
+            for future in as_completed(futures):
+                profile_id, algorithm, seed = futures[future]
+                try:
+                    _, done_algo, done_seed, pop_path, hist_path, resumed = future.result()
+                    store(pop_path, hist_path)
+                    pbar.update(1)
+                    pbar.set_postfix_str(
+                        f"{'resume' if resumed else 'done'} {done_algo} {profile_id} s{done_seed}"
+                    )
+                except Exception as exc:
+                    pbar.close()
+                    raise RuntimeError(
+                        f"run failed: algo={algorithm}, profile={profile_id}, seed={seed}: {exc}"
+                    ) from exc
 
     pbar.close()
     populations = pd.concat(population_frames, ignore_index=True) if population_frames else pd.DataFrame()

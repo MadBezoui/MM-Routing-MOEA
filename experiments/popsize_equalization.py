@@ -88,7 +88,7 @@ def run(
             "dz_profile_level": result["dz_profile_level_confirmatory"],
             "wilcoxon_statistic": result["wilcoxon_profile_statistic"],
             "wilcoxon_p": result["wilcoxon_profile_p"],
-            "profile_wins_pi_nsga3": result["profile_wins_a"],
+            "profile_wins_pi_nsga3": result["profile_wins_b"],
             "n_profiles": result["n_profiles"],
             "sign_convention": "NSGA-II minus PI-NSGA-III; negative favours PI-NSGA-III",
         }

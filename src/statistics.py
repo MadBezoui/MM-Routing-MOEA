@@ -73,15 +73,20 @@ def cohens_dz(differences: Sequence[float]) -> float:
 
 
 def wilcoxon_report(differences: Sequence[float], zero_method: str = "wilcox") -> Dict[str, float]:
-    """One-sample Wilcoxon signed-rank test with its rank-biserial effect size.
+    """One-sample Wilcoxon signed-rank test.
 
-    ``r = |Z| / sqrt(n)`` carries the sign of the mean difference, so that a
-    negative ``r`` favours the same algorithm as a negative ``d_z``.
+    Returns the Signed standardized Wilcoxon effect size (r = sign(mean) * |Z| / sqrt(n_eff)).
+    The current Z-magnitude is reconstructed from the two-sided p-value if SciPy
+    does not provide zstatistic.
     """
     d = np.asarray(differences, dtype=float)
     n = len(d)
-    if n < 3 or np.allclose(d, 0):
-        return {"n": n, "statistic": float("nan"), "p_value": float("nan"),
+    nonzero = d[~np.isclose(d, 0.0)]
+    n_eff = len(nonzero)
+
+    if n_eff < 3:
+        return {"n_total": n, "n_effective": n_eff, "n": n, 
+                "statistic": float("nan"), "p_value": float("nan"),
                 "z": float("nan"), "r": float("nan"),
                 "hodges_lehmann": float(np.median(d)) if n else float("nan")}
 
@@ -90,11 +95,13 @@ def wilcoxon_report(differences: Sequence[float], zero_method: str = "wilcox") -
     walsh = (d[:, None] + d[None, :]) / 2.0
     hl = float(np.median(walsh[np.triu_indices(n)]))
     return {
-        "n": n,
+        "n_total": n,
+        "n_effective": n_eff,
+        "n": n,  # kept for backward compatibility
         "statistic": float(result.statistic),
         "p_value": float(result.pvalue),
         "z": z,
-        "r": float(np.sign(d.mean()) * abs(z) / np.sqrt(n)),
+        "r": float(np.sign(d.mean()) * abs(z) / np.sqrt(n_eff)),
         "hodges_lehmann": hl,
     }
 

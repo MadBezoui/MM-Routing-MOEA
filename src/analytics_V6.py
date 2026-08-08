@@ -221,7 +221,7 @@ def plot_caterpillar(metrics: pd.DataFrame, algo_a: str, algo_b: str, out_path: 
     ax.axhline(ordered.mean(), ls="--", color="tab:blue",
                label=f"mean = {ordered.mean():.4f}")
     ax.axhline(0.0, color="black", lw=0.8)
-    ax.set_xlabel(f"Profiles sorted by HV gain ({LABELS.get(algo_b, algo_b)} - {LABELS.get(algo_a, algo_a)})")
+    ax.set_xlabel(f"Profiles sorted by HV difference ({LABELS.get(algo_a, algo_a)} - {LABELS.get(algo_b, algo_b)})")
     ax.set_ylabel("Per-profile mean HV difference")
     ax.set_title(f"{LABELS.get(algo_b, algo_b)} gain on {(ordered < 0).sum()}/{len(ordered)} profiles")
     ax.legend()

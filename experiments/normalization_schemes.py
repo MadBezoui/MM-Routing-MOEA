@@ -88,7 +88,7 @@ def run(
                 "mean_diff": result["mean_diff"],
                 "dz_profile_level": result["dz_profile_level_confirmatory"],
                 "wilcoxon_profile_p": result["wilcoxon_profile_p"],
-                "profile_wins_b": result["profile_wins_a"],
+                "profile_wins_b": result["profile_wins_b"],
                 "n_profiles": result["n_profiles"],
                 "ranking_preserved": bool(result["dz_profile_level_confirmatory"] < 0),
             })

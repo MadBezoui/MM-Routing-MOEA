@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Ibnelbey"
+    given-names: "Anonymized"
+  - family-names: "Bezoui"
+    given-names: "Madani"
+title: "Priority-informed many-objective optimization for personalized multimodal route planning"
+version: 1.0.0
+date-released: 2026-08-08
+url: "https://github.com/MadBezoui/MM-Routing-MOEA"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Ibnelbey"
+      given-names: "Anonymized"
+    - family-names: "Bezoui"
+      given-names: "Madani"
+  title: "Priority-informed many-objective optimization for personalized multimodal route planning under survey-calibrated user preferences"
+  journal: "Under review"
+  year: 2026

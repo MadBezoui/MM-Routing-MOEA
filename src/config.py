@@ -249,6 +249,11 @@ DEFAULT_BENCHMARK = BenchmarkConfig()
 #: direction is associated with at least one individual; it is therefore fixed
 #: by the construction of Section 4.3 rather than tuned.
 POPULATION_SIZES: Dict[str, Dict[str, int]] = {
+    "smoke": {
+        "nsga2": 20,
+        "nsga3": 20,
+        "pi_nsga3": 20,
+    },
     "main": {
         "nsga2": 168,
         "pi_nsga3": 170, "pi_nsga3_raw": 170, "pi_nsga3_stab": 170,
