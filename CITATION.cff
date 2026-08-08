@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 authors:
   - family-names: "Ibnelbey"
-    given-names: "Anonymized"
+    given-names: "Raja"
   - family-names: "Bezoui"
     given-names: "Madani"
 title: "Priority-informed many-objective optimization for personalized multimodal route planning"
@@ -13,7 +13,7 @@ preferred-citation:
   type: article
   authors:
     - family-names: "Ibnelbey"
-      given-names: "Anonymized"
+      given-names: "Raja"
     - family-names: "Bezoui"
       given-names: "Madani"
   title: "Priority-informed many-objective optimization for personalized multimodal route planning under survey-calibrated user preferences"

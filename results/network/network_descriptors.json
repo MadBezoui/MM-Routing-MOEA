@@ -1,17 +1,17 @@
 {
-  "n_nodes": 316,
-  "n_edges": 5033,
+  "n_nodes": 301,
+  "n_edges": 1635,
   "per_mode_layer_connectivity": {
     "walk": {
-      "nodes_touched": 313,
-      "largest_strongly_connected_component": 313
+      "nodes_touched": 298,
+      "largest_strongly_connected_component": 2
     },
     "bike": {
-      "nodes_touched": 309,
-      "largest_strongly_connected_component": 309
+      "nodes_touched": 295,
+      "largest_strongly_connected_component": 2
     },
     "bus": {
-      "nodes_touched": 276,
+      "nodes_touched": 262,
       "largest_strongly_connected_component": 230
     },
     "tram": {
@@ -19,34 +19,34 @@
       "largest_strongly_connected_component": 93
     },
     "car": {
-      "nodes_touched": 312,
-      "largest_strongly_connected_component": 312
+      "nodes_touched": 297,
+      "largest_strongly_connected_component": 3
     }
   },
   "edges_by_mode": {
-    "walk": 1496,
-    "bike": 1518,
-    "bus": 573,
+    "walk": 298,
+    "bike": 295,
+    "bus": 553,
     "tram": 192,
-    "car": 1254
+    "car": 297
   },
   "edge_share_by_mode": {
-    "walk": 29.7,
-    "bike": 30.2,
-    "bus": 11.4,
-    "tram": 3.8,
-    "car": 24.9
+    "walk": 18.2,
+    "bike": 18.0,
+    "bus": 33.8,
+    "tram": 11.7,
+    "car": 18.2
   },
-  "mean_node_degree_simple_undirected": 5.79,
-  "mean_node_degree_multi": 31.85,
-  "median_node_degree": 6.0,
-  "max_node_degree": 10,
-  "n_transfer_hubs_ge_3_modes": 314,
+  "mean_node_degree_simple_undirected": 2.86,
+  "mean_node_degree_multi": 10.86,
+  "median_node_degree": 3.0,
+  "max_node_degree": 8,
+  "n_transfer_hubs_ge_3_modes": 299,
   "n_interchange_hubs_bus_and_tram": 55,
   "is_strongly_connected": true,
-  "mean_shortest_path_edges": 8.64,
+  "mean_shortest_path_edges": 12.26,
   "n_od_pairs_sampled": 60,
-  "mean_feasible_paths_per_od": 149.1,
+  "mean_feasible_paths_per_od": 5.716666666666667,
   "median_feasible_paths_per_od": 0.0,
   "path_enumeration_cutoff_edges": 8,
   "path_enumeration_cap": 400

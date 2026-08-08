@@ -270,7 +270,7 @@ def load_comfort_training_data(survey_dir: str | Path) -> pd.DataFrame:
         "temperature_c": weather.map(_TEMPERATURE_BY_WEATHER).fillna(_DEFAULT_TEMPERATURE_C).to_numpy(),
         "age": pd.to_numeric(age, errors="coerce").to_numpy(),
         "mobility_restriction": pd.to_numeric(restriction, errors="coerce").to_numpy(),
-        "comfort_score": pd.to_numeric(scen["human_comfort_normalized_0_1"], errors="coerce").clip(0, 1).to_numpy(),
+        "comfort_score": pd.to_numeric(scen["human_comfort_rating_1_5"], errors="coerce").sub(1).div(4).clip(0, 1).to_numpy(),
     })
     # Crowding is recorded only for scenarios with a public-transport leg.  On
     # a purely active or car-based scenario the field is not applicable and is
@@ -347,7 +347,7 @@ def describe_survey(survey_dir: str | Path) -> Dict[str, object]:
     demo = _read(survey_dir, _DEMO_FILE)
     scen = _read(survey_dir, _SCENARIO_FILE)
     per_respondent = scen.groupby("student_id").size()
-    ratings = pd.to_numeric(scen["human_comfort_rating_1_10"], errors="coerce")
+    ratings = pd.to_numeric(scen["human_comfort_rating_1_5"], errors="coerce")
 
     return {
         "n_respondents": int(len(demo)),
@@ -358,11 +358,11 @@ def describe_survey(survey_dir: str | Path) -> Dict[str, object]:
             "median": float(per_respondent.median()),
         },
         "comfort_rating_scale": {
-            "column": "human_comfort_rating_1_10",
+            "column": "human_comfort_rating_1_5",
             "observed_min": float(ratings.min()),
             "observed_max": float(ratings.max()),
             "n_distinct_levels": int(ratings.nunique()),
-            "normalization": "human_comfort_normalized_0_1 = rating / 10",
+            "normalization": "human_comfort_normalized = (rating - 1) / 4",
         },
         "distance_km": {
             "mean": float(demo["distance_km"].mean()),

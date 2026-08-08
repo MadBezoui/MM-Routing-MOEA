@@ -269,7 +269,7 @@ def main() -> int:
     boundary_path = (
         RAW_DIRECTORY / "eurometropole_strasbourg_246700488.geojson"
     )
-    strasbourg_path = RAW_DIRECTORY / "strasbourg.osm.pbf"
+    strasbourg_path = RAW_DIRECTORY / "strasbourg.osm"
     gtfs_path = RAW_DIRECTORY / "strasbourg_gtfs.zip"
 
     download(OSM_SOURCE_URL, alsace_path)
@@ -375,7 +375,7 @@ def main() -> int:
     context = {
         "study_area": "Eurometropole de Strasbourg",
         "epci_code": "246700488",
-        "osm_file": "data/raw/strasbourg.osm.pbf",
+        "osm_file": "data/raw/strasbourg.osm",
         "gtfs_file": "data/raw/strasbourg_gtfs.zip",
         "service_date": REFERENCE_SERVICE_DATE,
         "departure_time": REFERENCE_DEPARTURE_TIME,

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at_utc": "2026-08-08T01:55:46.102268+00:00",
+  "generated_at_utc": "2026-08-08T22:44:43.921933+00:00",
   "study_area": {
     "name": "Eurometropole de Strasbourg",
     "epci_code": "246700488",
@@ -16,23 +16,21 @@
     "source_file": "alsace-260101.osm.pbf",
     "source_md5": "c197936869b3039e4788942e11aa9f81",
     "source_sha256": "bb56ffa177232b9d39df9f9b0b84957bb0d39b44fd941a7cab7431c6b66acd99",
-    "extract_file": "strasbourg.osm.pbf",
-    "extract_sha256": "ad8994fa2713db7f6925e86a459e99a4f0627dee17e2df56d54882b83c1169e8",
+    "extract_file": "strasbourg.osm",
+    "extract_sha256": "9d6b5e91aa1990de3c04d6ff1c587db10ca2d72a490440c230a4e1c21def6684",
     "osmium_fileinfo": {
       "file": {
-        "name": "/Users/madanibezoui/Documents/Projects/MTV_ACL_Final_Aout2026/Final Repo/data/raw/strasbourg.osm.pbf",
-        "format": "PBF",
+        "name": "/Users/madanibezoui/Documents/Projects/MTV_ACL_Final_Aout2026/MM-Routing-MOEA/data/raw/strasbourg.osm",
+        "format": "XML",
         "compression": "none",
-        "size": 18886968
+        "size": 363795522
       },
       "header": {
         "boxes": [],
         "with_history": false,
         "option": {
           "generator": "osmium/1.16.0",
-          "pbf_dense_nodes": "true",
-          "pbf_optional_feature_0": "Sort.Type_then_ID",
-          "sorting": "Type_then_ID"
+          "version": "0.6"
         }
       },
       "data": {
@@ -68,9 +66,9 @@
           "relations": 20029070
         },
         "buffers": {
-          "count": 3251,
-          "size": 207800376,
-          "capacity": 217382912
+          "count": 188,
+          "size": 196564216,
+          "capacity": 197132288
         },
         "metadata": {
           "all_objects": {

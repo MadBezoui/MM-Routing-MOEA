@@ -1,7 +1,7 @@
 {
   "study_area": "Eurometropole de Strasbourg",
   "epci_code": "246700488",
-  "osm_file": "data/raw/strasbourg.osm.pbf",
+  "osm_file": "data/raw/strasbourg.osm",
   "gtfs_file": "data/raw/strasbourg_gtfs.zip",
   "service_date": "2026-09-15",
   "departure_time": "08:00:00",
