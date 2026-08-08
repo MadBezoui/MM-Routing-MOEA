@@ -1,0 +1,53 @@
+{
+  "n_nodes": 316,
+  "n_edges": 5033,
+  "per_mode_layer_connectivity": {
+    "walk": {
+      "nodes_touched": 313,
+      "largest_strongly_connected_component": 313
+    },
+    "bike": {
+      "nodes_touched": 309,
+      "largest_strongly_connected_component": 309
+    },
+    "bus": {
+      "nodes_touched": 276,
+      "largest_strongly_connected_component": 230
+    },
+    "tram": {
+      "nodes_touched": 93,
+      "largest_strongly_connected_component": 93
+    },
+    "car": {
+      "nodes_touched": 312,
+      "largest_strongly_connected_component": 312
+    }
+  },
+  "edges_by_mode": {
+    "walk": 1496,
+    "bike": 1518,
+    "bus": 573,
+    "tram": 192,
+    "car": 1254
+  },
+  "edge_share_by_mode": {
+    "walk": 29.7,
+    "bike": 30.2,
+    "bus": 11.4,
+    "tram": 3.8,
+    "car": 24.9
+  },
+  "mean_node_degree_simple_undirected": 5.79,
+  "mean_node_degree_multi": 31.85,
+  "median_node_degree": 6.0,
+  "max_node_degree": 10,
+  "n_transfer_hubs_ge_3_modes": 314,
+  "n_interchange_hubs_bus_and_tram": 55,
+  "is_strongly_connected": true,
+  "mean_shortest_path_edges": 8.64,
+  "n_od_pairs_sampled": 60,
+  "mean_feasible_paths_per_od": 149.1,
+  "median_feasible_paths_per_od": 0.0,
+  "path_enumeration_cutoff_edges": 8,
+  "path_enumeration_cap": 400
+}

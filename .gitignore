@@ -1,4 +1,7 @@
 # Large automatically downloaded network data
+data/raw/*.osm.pbf
+data/raw/*.zip
+data/raw/*.md5
 
 # Generated network artefacts
 data/processed/*.graphml
@@ -16,14 +19,4 @@ venv/
 
 # Temporary downloads
 *.part
-data/processed/*
-!data/processed/od_pairs.csv
-data/raw/strasbourg.osm.osm
-data/raw/alsace-latest.osm.pbf
-
-# Ignore output CSVs and populations but track JSON metadata
-outputs_v6_smart/*/checkpoints/
-outputs_v6_smart/*.csv
-!outputs_v6_smart/**/run_metadata.json
-outputs_verification/*.csv
-outputs_verification/*/checkpoints/
+data/raw/*.osm

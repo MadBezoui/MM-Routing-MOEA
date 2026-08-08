@@ -1,11 +1,26 @@
+"""optimization_framework_parallel3.py
+======================================
+Algorithm construction and parallel execution of the experimental plans.
+
+The five algorithms of Table 4 are built here.  Constraint handling follows the
+table exactly: feasibility-first constrained domination (pymoo's default) for
+NSGA-II, PI-NSGA-III, canonical NSGA-III and SMS-EMOA, and a penalised
+Tchebycheff scalarization with coefficient :math:`10^3` for MOEA/D.
+
+Reference directions are delegated to :mod:`src.reference_directions`, which is
+what keeps *canonical* NSGA-III genuinely canonical: it receives the plain
+Das-Dennis lattice, never the priority-informed one.
+"""
+
 from __future__ import annotations
 
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
-import time
 
 import numpy as np
 import pandas as pd
@@ -22,30 +37,29 @@ from pymoo.operators.crossover.sbx import SBX
 from pymoo.operators.mutation.pm import PM
 from pymoo.operators.sampling.rnd import FloatRandomSampling
 from pymoo.optimize import minimize
-from pymoo.util.ref_dirs import get_reference_directions
 from tqdm.auto import tqdm
 
-from src.config import resolve_population_size
+from src.config import (
+    DEFAULT_ALGO_SWEEP,
+    DEFAULT_EXPERIMENT,
+    DEFAULT_REFDIRS,
+    canonical_algorithm,
+    resolve_population_size,
+)
+from src.reference_directions import build_reference_directions
 
 Config.warnings["not_compiled"] = False
+logger = logging.getLogger(__name__)
 
-ObjectiveEvaluator = Callable[[np.ndarray, Dict[str, object], Dict[str, object], object], Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]]]
+ObjectiveEvaluator = Callable[
+    [np.ndarray, Dict[str, object], Dict[str, object], object],
+    Tuple[np.ndarray, np.ndarray, Dict[str, np.ndarray]],
+]
 
-def compute_feasible_mask(
-    G: np.ndarray,
-    tolerance: float = 1e-12,
-) -> np.ndarray:
-    if G is None:
-        raise ValueError("G cannot be None")
-    G_arr = np.asarray(G, dtype=float)
-    if G_arr.ndim == 1:
-        G_arr = G_arr.reshape(-1, 1)
-    elif G_arr.ndim != 2:
-        raise ValueError("G must be a 1D or 2D array")
-    if not np.isfinite(G_arr).all():
-        raise ValueError("G contains non-finite values")
-    return np.all(G_arr <= tolerance, axis=1)
-
+#: Algorithms driven by a reference-direction / weight-vector set.
+REF_DIR_ALGORITHMS = frozenset({
+    "pi_nsga3", "pi_nsga3_raw", "pi_nsga3_stab", "canonical_nsga3", "moead",
+})
 
 
 @dataclass
@@ -58,29 +72,42 @@ class AlgorithmRunOutput:
     history: pd.DataFrame
 
 
+# --------------------------------------------------------------------------
+# Problems
+# --------------------------------------------------------------------------
+
 class ProfiledMultimodalProblem(Problem):
+    """Single-profile instance of the constrained four-objective problem."""
+
     def __init__(
         self,
         n_var: int,
         n_obj: int,
-        xl: Sequence[float],
-        xu: Sequence[float],
+        xl: Optional[Sequence[float]],
+        xu: Optional[Sequence[float]],
         evaluator: ObjectiveEvaluator,
         profile: Dict[str, object],
         extras: Dict[str, object],
         scenario: object,
         n_ieq_constr: int = 1,
+        vtype: type = float,
     ):
-        # Force n_ieq_constr to 4 if we are using the discrete evaluator
-        is_discrete = getattr(evaluator, '__class__', None).__name__ == "PathMultimodalEvaluator"
-        if is_discrete:
-            n_ieq_constr = 4
-
-        super().__init__(n_var=n_var, n_obj=n_obj, n_ieq_constr=n_ieq_constr, xl=np.asarray(xl) if xl is not None else None, xu=np.asarray(xu) if xu is not None else None)
+        super().__init__(
+            n_var=n_var,
+            n_obj=n_obj,
+            n_ieq_constr=n_ieq_constr,
+            xl=None if xl is None else np.asarray(xl),
+            xu=None if xu is None else np.asarray(xu),
+            vtype=vtype,
+        )
         self._evaluator = evaluator
         self.profile = profile
         self.extras = extras
         self.scenario = scenario
+        #: Multimodal graph and its cached adjacency index, set by the problem
+        #: factory when the path encoding is used.
+        self.graph = None
+        self.graph_index = None
         self.latest_meta: Dict[str, np.ndarray] = {}
 
     def _evaluate(self, X, out, *args, **kwargs):
@@ -91,65 +118,82 @@ class ProfiledMultimodalProblem(Problem):
 
 
 class PenaltyProblem(Problem):
-    def __init__(self, base_problem: ProfiledMultimodalProblem, penalty_scale: float = 1e3):
-        super().__init__(n_var=base_problem.n_var, n_obj=base_problem.n_obj, n_ieq_constr=base_problem.n_ieq_constr, xl=base_problem.xl, xu=base_problem.xu)
+    """Constraint handling for MOEA/D: penalised Tchebycheff scalarization.
+
+    The aggregated violation is multiplied by ``penalty_scale`` (:math:`10^3`,
+    Table 4) and added to every objective, since MOEA/D as implemented in pymoo
+    optimises an unconstrained scalarization.
+    """
+
+    def __init__(self, base_problem: ProfiledMultimodalProblem,
+                 penalty_scale: float = DEFAULT_ALGO_SWEEP.moead_penalty):
+        super().__init__(
+            n_var=base_problem.n_var, n_obj=base_problem.n_obj,
+            xl=base_problem.xl, xu=base_problem.xu,
+            vtype=base_problem.vtype,
+        )
         self.base_problem = base_problem
-        self.penalty_scale = penalty_scale
+        self.penalty_scale = float(penalty_scale)
         self.profile = base_problem.profile
         self.extras = base_problem.extras
         self.scenario = base_problem.scenario
 
     def _evaluate(self, X, out, *args, **kwargs):
-        inner = {}
+        inner: Dict[str, np.ndarray] = {}
         self.base_problem._evaluate(X, inner, *args, **kwargs)
         F = np.asarray(inner["F"], dtype=float)
         G = np.asarray(inner.get("G", np.zeros((len(F), 1))), dtype=float)
-        penalty = np.maximum(G, 0).sum(axis=1, keepdims=True) * self.penalty_scale
-        out["F"] = F + penalty
+        out["F"] = F + np.maximum(G, 0).sum(axis=1, keepdims=True) * self.penalty_scale
 
+
+# --------------------------------------------------------------------------
+# Instrumentation
+# --------------------------------------------------------------------------
 
 class MetricsCallback(Callback):
-    def __init__(self, reference_front: Optional[np.ndarray] = None, reference_point: Optional[np.ndarray] = None):
+    """Per-generation hypervolume, IGD, spacing and feasibility ratio.
+
+    This callback is what Section 7.3 calls *instrumentation*; disabling it
+    roughly halves the wall-clock time of a run.
+    """
+
+    def __init__(self, reference_front=None, reference_point=None, enabled: bool = True):
         super().__init__()
         self.reference_front = reference_front
         self.reference_point = reference_point
+        self.enabled = enabled
         self.data["history"] = []
 
     def notify(self, algorithm):
+        if not self.enabled:
+            return
         pop = algorithm.pop
         F = pop.get("F")
         G = pop.get("G")
-        feasible = compute_feasible_mask(G) if G is not None else np.ones(len(F), dtype=bool)
-        feasible_F = (
-            F[feasible]
-            if feasible.any()
-            else np.empty((0, F.shape[1]), dtype=float)
-        )
+        if G is not None and np.ndim(G) > 1:
+            feasible = np.all(G <= 0, axis=1)
+        elif G is not None:
+            feasible = np.asarray(G <= 0).ravel()
+        else:
+            feasible = np.ones(len(F), dtype=bool)
+        feasible_F = F[feasible] if feasible.any() else F
 
-        hv = 0.0
+        hv = np.nan
+        if self.reference_point is not None and feasible_F.size:
+            hv = float(HV(ref_point=self.reference_point)(feasible_F))
         igd = np.nan
-        if feasible_F.size > 0:
-            if self.reference_point is not None:
-                inside_reference = np.all(feasible_F <= self.reference_point, axis=1)
-                valid_F = feasible_F[inside_reference]
-                if valid_F.size > 0:
-                    hv = float(HV(ref_point=self.reference_point)(valid_F))
-            
-            if self.reference_front is not None:
-                igd = float(IGD(self.reference_front)(feasible_F))
+        if self.reference_front is not None and feasible_F.size:
+            igd = float(IGD(self.reference_front)(feasible_F))
 
-        spacing = compute_spacing(feasible_F) if feasible_F.size else np.nan
-        self.data["history"].append(
-            {
-                "generation": algorithm.n_gen,
-                "hypervolume": hv,
-                "igd": igd,
-                "spacing": spacing,
-                "feasible_ratio": float(np.mean(feasible)),
-                "n_feasible": int(np.sum(feasible)),
-                "population_size": int(len(pop)),
-            }
-        )
+        self.data["history"].append({
+            "generation": algorithm.n_gen,
+            "hypervolume": hv,
+            "igd": igd,
+            "spacing": compute_spacing(feasible_F) if feasible_F.size else np.nan,
+            "feasible_ratio": float(np.mean(feasible)),
+            "n_feasible": int(np.sum(feasible)),
+            "population_size": int(len(pop)),
+        })
 
 
 def compute_spacing(F: np.ndarray) -> float:
@@ -158,268 +202,281 @@ def compute_spacing(F: np.ndarray) -> float:
     d = np.linalg.norm(F[:, None, :] - F[None, :, :], axis=2)
     d[d == 0] = np.inf
     nearest = d.min(axis=1)
-    return float(np.std(nearest, ddof=1)) if len(nearest) > 1 else 0.0
+    return float(np.std(nearest, ddof=1))
 
 
-def weighted_reference_directions(n_obj: int, n_partitions: int, priority_weights: Optional[Sequence[float]] = None, blend_ratio: float = 0.3) -> np.ndarray:
-    base = get_reference_directions("das-dennis", n_obj, n_partitions=n_partitions)
-    if priority_weights is None:
-        return base
-    w = np.asarray(priority_weights, dtype=float)
-    if w.ndim != 1 or len(w) != n_obj:
-        return base
-    w = np.clip(w, 1e-9, None)
-    w = w / w.sum()
-    anchors = [w]
-    eye = np.eye(n_obj)
-    for e in eye:
-        anchors.append((1.0 - blend_ratio) * w + blend_ratio * e)
-    anchors = np.asarray(anchors)
-    anchors = anchors / anchors.sum(axis=1, keepdims=True)
-    merged = np.vstack([base, anchors])
-    return np.unique(np.round(merged, 6), axis=0)
+# --------------------------------------------------------------------------
+# Algorithm construction
+# --------------------------------------------------------------------------
 
-
-def make_algorithm(name: str, problem: Problem, population_size: int, n_partitions: int, crossover_prob: float, crossover_eta: float, mutation_eta: float, priority_weights: Optional[Sequence[float]] = None, plan: str = "main", seed: int = 42):
-    is_discrete = hasattr(problem, "_evaluator") and type(problem._evaluator).__name__ == "PathMultimodalEvaluator"
-    
-    if is_discrete and getattr(getattr(problem, 'scenario', None), 'G', None) is not None:
-        from src.network.operators import PathSampling, PathCrossover, PathMutation, PathDuplicateElimination
-        common = dict(
-            sampling=PathSampling(problem.scenario.G, problem.scenario.origins, problem.scenario.destinations, seed=seed),
-            crossover=PathCrossover(prob=crossover_prob, seed=seed),
-            mutation=PathMutation(problem.scenario.G, prob=0.1, seed=seed),
-            eliminate_duplicates=PathDuplicateElimination(),
+def make_operators(problem: Problem, mode: str, crossover_prob: float,
+                   crossover_eta: float, mutation_eta: float,
+                   path_mutation_prob: float) -> Dict[str, object]:
+    """Return the sampling/crossover/mutation triple for the encoding in use."""
+    if mode == "path":
+        from src.network.operators import (
+            MultimodalIndex, PathCrossover, PathMutation, PathSampling,
         )
-    else:
-        common = dict(
-            sampling=FloatRandomSampling(),
-            crossover=SBX(prob=crossover_prob, eta=crossover_eta),
-            mutation=PM(eta=mutation_eta),
+        G = getattr(problem, "graph", None) or getattr(problem.scenario, "G", None)
+        if G is None:
+            raise ValueError(
+                "path encoding requires a multimodal graph; attach it to the "
+                "problem (problem.graph) or to the scenario (scenario.G)"
+            )
+        index = getattr(problem, "graph_index", None) or MultimodalIndex(G)
+        problem.graph_index = index
+        return dict(
+            sampling=PathSampling(G, index=index),
+            crossover=PathCrossover(G, prob=crossover_prob),
+            mutation=PathMutation(G, index=index, prob=path_mutation_prob),
         )
-    lname = name.lower()
-    
-    if lname == "nsga3":
-        raise ValueError("Ambiguous algorithm identifier 'nsga3'. Use 'canonical_nsga3', 'pi_nsga3_raw', or 'pi_nsga3_stab'.")
-    
-    # Distinction between Canonical NSGA-III and PI-NSGA-III
-    if lname == "canonical_nsga3":
-        ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=None)
-    else:
-        ref_dirs = weighted_reference_directions(problem.n_obj, n_partitions, priority_weights=priority_weights)
-    
-    # Enforce population size explicitly based on the experimental plan
-    resolved_pop_size = resolve_population_size(
-        lname,
-        plan,
-        n_reference_directions=len(ref_dirs) if ref_dirs is not None else None,
-        requested_population_size=population_size
+    return dict(
+        sampling=FloatRandomSampling(),
+        crossover=SBX(prob=crossover_prob, eta=crossover_eta),
+        mutation=PM(eta=mutation_eta),
     )
-    
-    if lname == "nsga2":
-        return NSGA2(pop_size=resolved_pop_size, **common)
-    if lname in ["canonical_nsga3", "pi_nsga3", "pi_nsga3_raw", "pi_nsga3_stab"]:
-        # Do not use max()! Single source of truth.
-        return NSGA3(pop_size=resolved_pop_size, ref_dirs=ref_dirs, **common)
-    if lname == "moead":
-        return MOEAD(ref_dirs=ref_dirs, n_neighbors=min(20, len(ref_dirs)), **common)
-    if lname == "smsemoa":
-        return SMSEMOA(pop_size=resolved_pop_size, **common)
+
+
+def make_algorithm(
+    name: str,
+    problem: Problem,
+    plan: str,
+    n_partitions: int,
+    crossover_prob: float = DEFAULT_EXPERIMENT.crossover_prob,
+    crossover_eta: float = DEFAULT_EXPERIMENT.crossover_eta,
+    mutation_eta: float = DEFAULT_EXPERIMENT.mutation_eta,
+    stabilized_weights: Optional[Sequence[float]] = None,
+    raw_weights: Optional[Sequence[float]] = None,
+    rho: float = DEFAULT_REFDIRS.rho,
+    encoding: str = "path",
+    path_mutation_prob: float = DEFAULT_EXPERIMENT.path_mutation_prob,
+):
+    """Instantiate the pymoo algorithm for ``name`` under ``plan``."""
+    algo = canonical_algorithm(name)
+    common = make_operators(problem, encoding, crossover_prob, crossover_eta,
+                            mutation_eta, path_mutation_prob)
+    # Object-encoded variables cannot be compared by pymoo's default numeric
+    # duplicate filter.
+    if encoding == "path":
+        common["eliminate_duplicates"] = False
+
+    ref_dirs = None
+    if algo in REF_DIR_ALGORITHMS:
+        ref_dirs = build_reference_directions(
+            algo, problem.n_obj, n_partitions,
+            stabilized_weights=stabilized_weights,
+            raw_weights=raw_weights,
+            rho=rho,
+        )
+
+    pop_size = resolve_population_size(
+        algo, plan, len(ref_dirs) if ref_dirs is not None else None
+    )
+
+    if algo == "nsga2":
+        return NSGA2(pop_size=pop_size, **common)
+
+    if algo in ("pi_nsga3", "pi_nsga3_raw", "pi_nsga3_stab", "canonical_nsga3"):
+        # pymoo silently raises pop_size to len(ref_dirs); passing it
+        # explicitly keeps the effective size unambiguous and auditable.
+        return NSGA3(pop_size=pop_size, ref_dirs=ref_dirs, **common)
+
+    if algo == "moead":
+        common.pop("eliminate_duplicates", None)
+        return MOEAD(
+            ref_dirs=ref_dirs,
+            n_neighbors=min(DEFAULT_ALGO_SWEEP.moead_neighbors, len(ref_dirs)),
+            **common,
+        )
+
+    if algo == "smsemoa":
+        return SMSEMOA(pop_size=pop_size, **common)
+
     raise ValueError(f"Unsupported algorithm: {name}")
 
+
+# --------------------------------------------------------------------------
+# Single run
+# --------------------------------------------------------------------------
 
 def run_single_algorithm(
     problem: ProfiledMultimodalProblem,
     algorithm_name: str,
     seed: int,
     n_generations: int,
-    population_size: int,
+    plan: str,
     n_partitions: int,
-    crossover_prob: float,
-    crossover_eta: float,
-    mutation_eta: float,
+    crossover_prob: float = DEFAULT_EXPERIMENT.crossover_prob,
+    crossover_eta: float = DEFAULT_EXPERIMENT.crossover_eta,
+    mutation_eta: float = DEFAULT_EXPERIMENT.mutation_eta,
     reference_front: Optional[np.ndarray] = None,
     reference_point: Optional[np.ndarray] = None,
-    priority_weights: Optional[Sequence[float]] = None,
-    plan: str = "main",
+    stabilized_weights: Optional[Sequence[float]] = None,
+    raw_weights: Optional[Sequence[float]] = None,
+    rho: float = DEFAULT_REFDIRS.rho,
+    encoding: str = "path",
+    instrumented: bool = True,
 ) -> AlgorithmRunOutput:
-    actual_problem = PenaltyProblem(problem) if algorithm_name.lower() == "moead" and problem.has_constraints() else problem
+    algo = canonical_algorithm(algorithm_name)
+    actual = PenaltyProblem(problem) if algo == "moead" and problem.has_constraints() else problem
+
     algorithm = make_algorithm(
-        algorithm_name,
-        problem=problem,
-        population_size=population_size,
-        n_partitions=n_partitions,
-        crossover_prob=crossover_prob,
-        crossover_eta=crossover_eta,
-        mutation_eta=mutation_eta,
-        priority_weights=priority_weights,
-        plan=plan,
-        seed=seed,
+        algo, problem=problem, plan=plan, n_partitions=n_partitions,
+        crossover_prob=crossover_prob, crossover_eta=crossover_eta,
+        mutation_eta=mutation_eta, stabilized_weights=stabilized_weights,
+        raw_weights=raw_weights, rho=rho, encoding=encoding,
     )
-    callback = MetricsCallback(reference_front=reference_front, reference_point=reference_point)
+    callback = MetricsCallback(reference_front, reference_point, enabled=instrumented)
+
     start = time.perf_counter()
-    result = minimize(actual_problem, algorithm, ("n_gen", n_generations), seed=seed, callback=callback, verbose=False, save_history=False)
+    result = minimize(actual, algorithm, ("n_gen", n_generations), seed=seed,
+                      callback=callback, verbose=False, save_history=False)
     runtime = time.perf_counter() - start
 
-    X = np.asarray(result.pop.get("X"))
-    F = np.asarray(result.pop.get("F"))
+    X = np.asarray(result.pop.get("X"), dtype=object)
+    F = np.asarray(result.pop.get("F"), dtype=float)
     G = result.pop.get("G")
-    if G is None:
-        G = np.zeros((len(F), 1))
-    G = np.asarray(G)
-    G = np.asarray(G)
-    feasible = compute_feasible_mask(G) if G is not None else np.ones(len(F), dtype=bool)
+    G = np.zeros((len(F), 1)) if G is None else np.asarray(G, dtype=float)
+    feasible = np.all(G <= 0, axis=1) if G.ndim > 1 else np.asarray(G <= 0).ravel()
 
-    final_df = pd.DataFrame(X, columns=[f"x{i}" for i in range(problem.n_var)])
+    final_df = pd.DataFrame(index=range(len(F)))
+    if encoding == "path":
+        final_df["route_nodes"] = ["|".join(X[i, 0].nodes) for i in range(len(F))]
+        final_df["route_modes"] = ["|".join(X[i, 0].modes) for i in range(len(F))]
+        final_df["n_edges"] = [X[i, 0].n_edges for i in range(len(F))]
+    else:
+        for i in range(problem.n_var):
+            final_df[f"x{i}"] = X[:, i].astype(float)
     for j in range(problem.n_obj):
-        final_df[f"obj_{j+1}"] = F[:, j]
-    final_df["g_invalid"] = G[:, 0] if G.shape[1] > 0 else 0.0
-    final_df["g_budget"] = G[:, 1] if G.shape[1] > 1 else 0.0
-    final_df["g_time"] = G[:, 2] if G.shape[1] > 2 else 0.0
-    final_df["g_walk"] = G[:, 3] if G.shape[1] > 3 else 0.0
-    final_df["constraint_violation"] = np.maximum(G, 0.0).sum(axis=1) if G.ndim > 1 else np.maximum(G, 0.0)
+        final_df[f"obj_{j + 1}"] = F[:, j]
+    final_df["constraint_violation"] = G.sum(axis=1) if G.ndim > 1 else G
     final_df["feasible"] = feasible
     final_df["profile_id"] = problem.profile.get("profile_id", "unknown")
-    final_df["algorithm"] = algorithm_name.lower()
+    final_df["algorithm"] = algo
     final_df["seed"] = seed
     final_df["runtime_sec"] = runtime
 
     history_df = pd.DataFrame(callback.data["history"])
-    history_df["profile_id"] = problem.profile.get("profile_id", "unknown")
-    history_df["algorithm"] = algorithm_name.lower()
-    history_df["seed"] = seed
-    history_df["runtime_sec"] = runtime
-    return AlgorithmRunOutput(str(problem.profile.get("profile_id", "unknown")), algorithm_name.lower(), seed, runtime, final_df, history_df)
+    if len(history_df):
+        history_df["profile_id"] = problem.profile.get("profile_id", "unknown")
+        history_df["algorithm"] = algo
+        history_df["seed"] = seed
+        history_df["runtime_sec"] = runtime
+
+    return AlgorithmRunOutput(
+        str(problem.profile.get("profile_id", "unknown")), algo, seed, runtime,
+        final_df, history_df,
+    )
 
 
-def _task_paths(output_dir: Path, profile_id: str, algorithm_name: str, seed: int) -> Tuple[Path, Path]:
-    pop_path = output_dir / "checkpoints" / "population" / f"{profile_id}__{algorithm_name}__seed{seed}.csv"
-    hist_path = output_dir / "checkpoints" / "history" / f"{profile_id}__{algorithm_name}__seed{seed}.csv"
-    pop_path.parent.mkdir(parents=True, exist_ok=True)
-    hist_path.parent.mkdir(parents=True, exist_ok=True)
-    return pop_path, hist_path
+# --------------------------------------------------------------------------
+# Parallel suite
+# --------------------------------------------------------------------------
+
+def _task_paths(output_dir: Path, profile_id: str, algorithm: str, seed: int) -> Tuple[Path, Path]:
+    pop = output_dir / "checkpoints" / "population" / f"{profile_id}__{algorithm}__seed{seed}.csv"
+    hist = output_dir / "checkpoints" / "history" / f"{profile_id}__{algorithm}__seed{seed}.csv"
+    pop.parent.mkdir(parents=True, exist_ok=True)
+    hist.parent.mkdir(parents=True, exist_ok=True)
+    return pop, hist
 
 
-def _worker_task(
-    profile: Dict[str, object],
-    algorithm_name: str,
-    seed: int,
-    problem_factory: Callable[[Dict[str, object], object], ProfiledMultimodalProblem],
-    scenario: object,
-    output_dir: str,
-    n_generations: int,
-    population_size: int,
-    n_partitions: int,
-    crossover_prob: float,
-    crossover_eta: float,
-    mutation_eta: float,
-    priority_weights: Optional[Sequence[float]],
-    reference_front_factory: Optional[Callable[[Dict[str, object]], np.ndarray]],
-    reference_point_factory: Optional[Callable[[Dict[str, object]], np.ndarray]],
-    plan: str = "main",
-) -> Tuple[str, str, int, str, str, bool]:
+def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, output_dir,
+                 n_generations, plan, n_partitions, crossover_prob, crossover_eta,
+                 mutation_eta, stabilized_weights, raw_weights, rho,
+                 reference_front_factory, reference_point_factory, encoding, instrumented):
     profile_id = str(profile.get("profile_id", "unknown"))
-    output_path = Path(output_dir)
-    pop_ckpt, hist_ckpt = _task_paths(output_path, profile_id, algorithm_name, seed)
+    algo = canonical_algorithm(algorithm_name)
+    pop_ckpt, hist_ckpt = _task_paths(Path(output_dir), profile_id, algo, seed)
 
     if pop_ckpt.exists() and hist_ckpt.exists():
-        return profile_id, algorithm_name, seed, str(pop_ckpt), str(hist_ckpt), True
+        return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), True
 
     problem = problem_factory(profile, scenario)
     output = run_single_algorithm(
-        problem=problem,
-        algorithm_name=algorithm_name,
-        seed=seed,
-        n_generations=n_generations,
-        population_size=population_size,
-        n_partitions=n_partitions,
-        crossover_prob=crossover_prob,
-        crossover_eta=crossover_eta,
+        problem=problem, algorithm_name=algo, seed=seed,
+        n_generations=n_generations, plan=plan, n_partitions=n_partitions,
+        crossover_prob=crossover_prob, crossover_eta=crossover_eta,
         mutation_eta=mutation_eta,
         reference_front=reference_front_factory(profile) if reference_front_factory else None,
         reference_point=reference_point_factory(profile) if reference_point_factory else None,
-        priority_weights=priority_weights,
-        plan=plan,
+        stabilized_weights=stabilized_weights, raw_weights=raw_weights, rho=rho,
+        encoding=encoding, instrumented=instrumented,
     )
     output.final_population.to_csv(pop_ckpt, index=False)
     output.history.to_csv(hist_ckpt, index=False)
-    return profile_id, algorithm_name, seed, str(pop_ckpt), str(hist_ckpt), False
+    return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), False
 
 
 def run_algorithm_suite_parallel3_checkpointed(
-    problem_factory: Callable[[Dict[str, object], object], ProfiledMultimodalProblem],
+    problem_factory,
     profiles: Iterable[Dict[str, object]],
-    scenario: object,
+    scenario,
     output_dir: str,
     algorithms: Sequence[str],
     seeds: Sequence[int],
     n_generations: int,
-    population_size: int,
+    plan: str,
     n_partitions: int,
-    crossover_prob: float,
-    crossover_eta: float,
-    mutation_eta: float,
-    priority_weights: Optional[Sequence[float]] = None,
-    reference_front_factory: Optional[Callable[[Dict[str, object]], np.ndarray]] = None,
-    reference_point_factory: Optional[Callable[[Dict[str, object]], np.ndarray]] = None,
+    crossover_prob: float = DEFAULT_EXPERIMENT.crossover_prob,
+    crossover_eta: float = DEFAULT_EXPERIMENT.crossover_eta,
+    mutation_eta: float = DEFAULT_EXPERIMENT.mutation_eta,
+    stabilized_weights: Optional[Sequence[float]] = None,
+    raw_weights: Optional[Sequence[float]] = None,
+    rho: float = DEFAULT_REFDIRS.rho,
+    reference_front_factory=None,
+    reference_point_factory=None,
     max_workers: int = 3,
-    plan: str = "main",
+    encoding: str = "path",
+    instrumented: bool = True,
+    show_progress: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Run ``algorithms x profiles x seeds``, resuming from existing checkpoints."""
     output_path = Path(output_dir)
     profiles = list(profiles)
-    tasks = [(profile, algo, seed) for profile in profiles for seed in seeds for algo in algorithms]
-    total = len(tasks)
+    tasks = [(p, a, s) for p in profiles for s in seeds for a in algorithms]
     lock = Lock()
-
     population_frames: List[pd.DataFrame] = []
     history_frames: List[pd.DataFrame] = []
 
-    pbar = tqdm(total=total, desc="Optimization-3threads", unit="run", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}] {postfix}")
+    pbar = tqdm(total=len(tasks), desc=f"{plan}", unit="run", disable=not show_progress)
 
-    def read_and_store(pop_path: str, hist_path: str):
+    def store(pop_path: str, hist_path: str) -> None:
         pop_df = pd.read_csv(pop_path)
-        hist_df = pd.read_csv(hist_path)
+        hist_df = pd.read_csv(hist_path) if Path(hist_path).stat().st_size > 1 else pd.DataFrame()
         with lock:
             population_frames.append(pop_df)
-            history_frames.append(hist_df)
+            if len(hist_df):
+                history_frames.append(hist_df)
 
     with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="moo") as executor:
-        future_map = {
+        futures = {
             executor.submit(
-                _worker_task,
-                profile,
-                algorithm_name,
-                seed,
-                problem_factory,
-                scenario,
-                str(output_path),
-                n_generations,
-                population_size,
-                n_partitions,
-                crossover_prob,
-                crossover_eta,
-                mutation_eta,
-                priority_weights,
-                reference_front_factory,
-                reference_point_factory,
-                plan,
-            ): (str(profile.get("profile_id", "unknown")), algorithm_name, seed)
-            for profile, algorithm_name, seed in tasks
+                _worker_task, profile, algorithm, seed, problem_factory, scenario,
+                str(output_path), n_generations, plan, n_partitions,
+                crossover_prob, crossover_eta, mutation_eta,
+                stabilized_weights, raw_weights, rho,
+                reference_front_factory, reference_point_factory,
+                encoding, instrumented,
+            ): (str(profile.get("profile_id", "unknown")), algorithm, seed)
+            for profile, algorithm, seed in tasks
         }
-
-        for future in as_completed(future_map):
-            profile_id, algorithm_name, seed = future_map[future]
+        for future in as_completed(futures):
+            profile_id, algorithm, seed = futures[future]
             try:
-                done_profile_id, done_algorithm, done_seed, pop_path, hist_path, resumed = future.result()
-                read_and_store(pop_path, hist_path)
-                status = "resume" if resumed else "done"
+                _, done_algo, done_seed, pop_path, hist_path, resumed = future.result()
+                store(pop_path, hist_path)
                 pbar.update(1)
-                pbar.set_postfix_str(f"{status} algo={done_algorithm}, profile={done_profile_id}, seed={done_seed}, workers={max_workers}")
-            except Exception as e:
+                pbar.set_postfix_str(
+                    f"{'resume' if resumed else 'done'} {done_algo} {profile_id} s{done_seed}"
+                )
+            except Exception as exc:
                 pbar.close()
-                raise RuntimeError(f"Parallel task failed for algo={algorithm_name}, profile={profile_id}, seed={seed}: {e}") from e
+                raise RuntimeError(
+                    f"run failed: algo={algorithm}, profile={profile_id}, seed={seed}: {exc}"
+                ) from exc
 
     pbar.close()
-    populations_df = pd.concat(population_frames, ignore_index=True) if population_frames else pd.DataFrame()
-    history_df = pd.concat(history_frames, ignore_index=True) if history_frames else pd.DataFrame()
-    return populations_df, history_df
+    populations = pd.concat(population_frames, ignore_index=True) if population_frames else pd.DataFrame()
+    history = pd.concat(history_frames, ignore_index=True) if history_frames else pd.DataFrame()
+    return populations, history

@@ -1,36 +1,164 @@
-# MoRoute-MOEA
+# Priority-informed NSGA-III for personalized multimodal route planning
 
-**MoRoute-MOEA** is an advanced Python framework designed for solving Multimodal Transportation Routing problems using Multi-Objective Evolutionary Algorithms (MOEAs).
+Reference implementation for *Priority-informed many-objective optimization for
+personalized multimodal route planning under survey-calibrated user
+preferences* (Ibnelbey & Bezoui).
 
-The framework models the city network as a highly detailed integrated graph combining both OpenStreetMap (OSM) pedestrian networks and General Transit Feed Specification (GTFS) public transportation schedules. It employs a discrete path-based genetic representation and state-of-the-art optimization algorithms (NSGA-II, NSGA-III, SMS-EMOA, and MOEA/D) to discover optimal Pareto fronts balancing multiple conflicting routing objectives.
+The framework formulates personalized multimodal routing as a **constrained
+four-objective problem** — travel time, monetary cost, carbon emissions and a
+survey-calibrated discomfort score — over a real OpenStreetMap/GTFS network of
+the Strasbourg metropolitan area, and solves it with a priority-informed
+variant of NSGA-III whose reference directions are anchored on stabilized user
+priority weights.
 
-## Features
+---
 
-- **Integrated Multimodal Graph Engine**: Automatically fuses OSM `.pbf` structures with `.zip` GTFS transit schedules into a singular `NetworkX` graph.
-- **Path-Based Routing Operators**: Uses specialized genetic crossover (`PathCrossover`), mutation (`PathMutation`), and sampling operators operating directly on graph structures, ensuring 100% valid generated routes.
-- **Multi-Objective Evaluator**: Computes true travel time, precise monetary costs (including subscriptions), emissions (using standard environmental models), and a machine-learning based comfort surrogate model.
-- **Comfort Surrogate Pipeline**: A 12-feature Multi-Layer Perceptron (MLP) trained on empirical survey data, evaluated using robust `GroupShuffleSplit` cross-validation to prevent data leakage and tested against input Gaussian noise for high-fidelity evaluation.
-- **Borda-Count Priority Stabilization**: Objectively calibrates the reference directions for many-objective algorithms (like NSGA-III) using smoothed Borda-count matrices extracted from traveler preference surveys.
+## Layout
 
-## Quick Start
+```
+data/
+  raw/                    frozen OSM extract, GTFS feed, study boundary, checksums
+  survey_results/         749 respondents, five semicolon-separated files
+  processed/              consolidated multimodal graph (built by src/network/builder.py)
 
-### Prerequisites
-Make sure you have `osmium-tool`, `conda`, and all required Python packages installed. The environment heavily relies on `networkx`, `pymoo`, `osmnx`, `pandas`, and `scikit-learn`.
+src/
+  config.py               every hyperparameter quoted in the manuscript, once
+  survey_data_loader.py   survey -> profiles, comfort training set, elicited weights
+  comfort_models.py       heuristic / linear / MLP comfort surrogates (Section 4.1)
+  preferences/
+    stabilization.py      Eq. 6-7: weight stabilization and the admissible set
+  reference_directions.py Eq. 8-9: Das-Dennis lattice and priority anchors
+  network/
+    osm_parser.py         streaming OSM reader, three mode-specific road layers
+    builder.py            consolidated five-mode multimodal graph (Section 5.2)
+    descriptors.py        Table 6 descriptors, adjacency matrices, degree histogram
+    route.py              solution encoding, topological validity (Section 3.1, 4.3)
+    evaluator.py          Eq. 1-5: objectives and constraint violation
+    operators.py          path sampling, crossover, mutation (Section 4.3)
+  optimization_framework_parallel3.py   algorithm construction, parallel runner
+  pipeline_V6_smart.py    orchestrator for the four experimental plans
+  statistics.py           Section 4.5 protocol: paired tests, Holm, bootstrap, Friedman
+  analytics_V6.py         Tables 8-12 and the results figures
 
-### Running the Optimizer
-You can launch the complete pipeline via the experiment runner. This script orchestrates the synthetic profile generation, subgraph filtering for rapid routing, and executes the MOEAs seamlessly.
-
-```bash
-export PYTHONPATH=.:src
-python src/experiment_runner.py --graph-path data/processed/strasbourg_multimodal.graphml --out-dir outputs_smart_routing
+experiments/              the sensitivity and ablation studies of Sections 6.4-6.6
+results/
+  network/                Table 6 artefacts
+  legacy_continuous_pipeline/   results of the superseded formulation (see below)
+archive/                  superseded scripts, kept for provenance
 ```
 
-### Data Pipeline
-To construct the integrated graph from raw files (`strasbourg.osm.pbf` and `strasbourg_gtfs.zip`), run the multimodal network builder:
+---
+
+## What the code implements
+
+**Problem (Section 3).** A solution is a path `P = (v₁,…,v_k)` on a directed
+multimodal graph together with a mode sequence `M(P)`. Objectives are summed
+over edges: travel time with transfer penalties of three to fifteen minutes
+depending on the quality of the interchange (Eq. 1), per-mode tariffs with a
+fare-variability factor (Eq. 2), length times per-mode emission factor times an
+occupancy multiplier (Eq. 3), and one minus the surrogate comfort score
+(Eq. 4). Feasibility aggregates three normalized violations — budget, maximum
+travel time and walking distance — each bound taken **per profile** from that
+respondent's own answers (Eq. 5).
+
+**Method (Section 4).** The comfort surrogate is a two-hidden-layer perceptron
+with a sigmoid output, trained on real trip-comfort ratings with a
+respondent-level split so that `R²` measures generalisation to unseen people.
+Elicited priority weights are stabilized by blending towards uniform and
+applying a per-component floor, which prevents a near-zero elicited weight
+(here emissions, at 8.9 × 10⁻⁵) from silently removing an objective. The
+stabilized vector then anchors `M + 1` extra reference directions on the
+Das-Dennis lattice.
+
+**Evaluation (Section 4.4–4.5).** Hypervolume is normalized against a reference
+point and a denominator built from the union of *all* algorithms and seeds of a
+profile, so the measurement instrument favours no algorithm. The unit of
+confirmatory inference is the profile, never the seed.
+
+---
+
+## Quick start
+
 ```bash
-export PYTHONPATH=.:src
-python src/network/builder.py
+pip install numpy pandas scipy matplotlib scikit-learn pymoo networkx tqdm
+
+# 1. build the network (once; parses the OSM extract and caches it)
+python -m src.network.builder
+python -m src.network.descriptors --out results/network
+
+# 2. smoke test: 3 profiles, 2 seeds, 10 generations
+python -m src.pipeline_V6_smart --output-dir /tmp/smoke \
+    --plans main --profile-limit 3 --seed-limit 2 --generations 10
+
+# 3. full run
+python -m src.pipeline_V6_smart --output-dir results/outputs_main \
+    --plans main extended convergence ablation --max-workers 3
+python -m src.analytics_V6 --runs results/outputs_main --out results/analytics
 ```
 
-## Authors
-This repository is dedicated to continuous research in AI-driven smart city mobility and multiobjective transportation routing.
+`REPRODUCE.md` maps every manuscript table and figure to its command.
+
+Runs are checkpointed per `(profile, algorithm, seed)`, so an interrupted
+experiment resumes where it stopped.
+
+---
+
+## Experimental plans (Section 5.3)
+
+| Plan | Profiles | Algorithms | Seeds | Generations | Population |
+|---|---|---|---|---|---|
+| main | 150 | NSGA-II, PI-NSGA-III | 30 | 150 | 168 / 170 |
+| extended | 30 | + MOEA/D, SMS-EMOA | 10 (5 for SMS-EMOA) | 120 | 128 |
+| convergence | 10 | NSGA-II, PI-NSGA-III | 30 | 150 | 168 / 170 |
+| ablation | 30 | NSGA-II, canonical NSGA-III, PI-raw, PI-stab | 10 | 150 | 168 / 165 / 170 / 170 |
+
+Population sizes are declared explicitly in `config.POPULATION_SIZES`. For the
+reference-direction methods the value equals the cardinality of the reference
+set, so that every direction is associated with at least one individual; it is
+fixed by the construction, not tuned. `experiments/popsize_equalization.py`
+quantifies what the 168-versus-170 asymmetry is worth.
+
+---
+
+## Frozen data inputs
+
+- OpenStreetMap / Geofabrik Alsace snapshot: 2026-01-01
+- Study boundary: Eurométropole de Strasbourg, EPCI 246700488
+- Archived CTS GTFS feed: 2026-08-05
+- Reference service date: 2026-09-15, departure 08:00 Europe/Paris
+
+```bash
+docker build -f Dockerfile.data -t pi-nsga3-data .
+docker run --rm -v "${PWD}:/workspace" pi-nsga3-data
+```
+
+Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
+`data/raw/checksums.sha256`.
+
+---
+
+## Before citing numbers from this repository
+
+Read **`DEVIATIONS.md`**. It lists every quantity where a fresh run produces a
+value different from the one printed in the manuscript, and why.
+
+The short version: the results under `results/legacy_continuous_pipeline/`
+were produced by an earlier formulation that solved a continuous mode-share
+allocation problem rather than the path-based problem of Section 3. They are
+internally consistent and fully re-derivable from their own CSV files, but they
+do not correspond to the code in `src/`. The main plan needs re-running before
+Tables 8–15 can be cited against this implementation, and **the direction of the
+headline result is not guaranteed to survive the change of formulation.**
+
+## Verification status
+
+| Check | Result |
+|---|---|
+| All 16 entry points run end to end | pass, on 3 profiles × 2 seeds × 12 generations |
+| Reproducibility | two runs at three workers are bit-identical |
+| `pyflakes src experiments` | clean |
+| Constraint activity | feasibility 54.6 % → 100 % by generation 10; all three Eq. 5 terms bind |
+| Reference sets | canonical 165 directions, priority-informed 170 = 165 + 5, extended 120/125 |
+| Priority weights | reproduce Table 3 to all printed digits |
+| Comfort surrogate | R² = 0.693 against the reported 0.69 |
+| Route realism | median 1 transfer, 16 edges; all five mode families present |

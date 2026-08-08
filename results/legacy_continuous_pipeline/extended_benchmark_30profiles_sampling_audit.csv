@@ -1,0 +1,14 @@
+plan_name,dimension,level,count
+extended_benchmark_30profiles,archetype,cost_sensitive,9
+extended_benchmark_30profiles,archetype,eco_conscious,8
+extended_benchmark_30profiles,archetype,time_sensitive,7
+extended_benchmark_30profiles,archetype,comfort_seeking,6
+extended_benchmark_30profiles,trip_distance_bin,medium,13
+extended_benchmark_30profiles,trip_distance_bin,long,11
+extended_benchmark_30profiles,trip_distance_bin,short,6
+extended_benchmark_30profiles,campus,Strasbourg,27
+extended_benchmark_30profiles,campus,Nancy,2
+extended_benchmark_30profiles,campus,Other,1
+extended_benchmark_30profiles,student_status,Student,19
+extended_benchmark_30profiles,student_status,Alternance,7
+extended_benchmark_30profiles,student_status,Employee,4

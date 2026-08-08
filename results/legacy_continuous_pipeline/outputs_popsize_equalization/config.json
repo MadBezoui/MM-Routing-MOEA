@@ -1,0 +1,7 @@
+{
+  "n_profiles_equalization": 30,
+  "n_seeds_equalization": 10,
+  "n_profiles_sweep": 10,
+  "n_seeds_sweep": 5,
+  "generations": 150
+}

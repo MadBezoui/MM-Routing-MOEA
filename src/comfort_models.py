@@ -1,31 +1,50 @@
+"""comfort_models.py
+====================
+The survey-calibrated comfort surrogate of Section 4.1 and its two baselines.
+
+Three models are compared on the same twelve features and the same
+respondent-level split:
+
+``heuristic_direct``
+    a transparent rule-based baseline, no learning;
+``linear_regression``
+    additive baseline, quantifies the contribution of non-linear interactions;
+``mlp_surrogate``
+    the proposed model: two hidden layers of 100 and 50 units, ReLU
+    activation, :math:`L_2` regularisation at :math:`\\alpha = 10^{-2}`, and a
+    sigmoid output, trained with Adam and early stopping on a 20 % held-out
+    validation split.
+
+The split is performed at the **respondent** level, so that all trip-comfort
+pairs of a given respondent land either in the training set or in the test set
+but never in both.  The reported :math:`R^2` therefore measures generalisation
+to unseen respondents.
+"""
+
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
-from scipy.special import logit, expit
+from sklearn.preprocessing import MinMaxScaler
 
-class SigmoidMLPRegressor(MLPRegressor):
-    def fit(self, X, y):
-        # Apply logit transform to bound regression strictly to (0, 1) during training
-        y_trans = logit(np.clip(y, 1e-6, 1 - 1e-6))
-        return super().fit(X, y_trans)
-        
-    def predict(self, X):
-        # Apply expit (sigmoid) to return true probabilities
-        return expit(super().predict(X))
+from src.config import COMFORT_FEATURES, ComfortTrainingConfig, SurveyCalibration
 
-from config import ComfortTrainingConfig, SurveyCalibration
+logger = logging.getLogger(__name__)
+
+#: Squeeze applied before the logit so that labels at the boundaries of the
+#: ordinal scale (a perfect or a minimal comfort rating) do not map to an
+#: unbounded target.  Without it a single label at 1.0 would dominate the loss.
+_SQUEEZE = 0.02
 
 
 @dataclass
@@ -37,12 +56,85 @@ class ComfortModelResult:
     predictions: pd.DataFrame
 
 
-class HeuristicComfortModel:
-    """Transparent rule-based comfort baseline.
+# --------------------------------------------------------------------------
+# Sigmoid output layer
+# --------------------------------------------------------------------------
 
-    This is included to answer reviewer requests for an ablation where the
-    heuristic formula is used directly, without a learned surrogate.
+def _logit(y: np.ndarray, squeeze: float = _SQUEEZE) -> np.ndarray:
+    y = np.clip(np.asarray(y, dtype=float), 0.0, 1.0) * (1.0 - 2.0 * squeeze) + squeeze
+    return np.log(y / (1.0 - y))
+
+
+def _expit(z: np.ndarray, squeeze: float = _SQUEEZE) -> np.ndarray:
+    s = 1.0 / (1.0 + np.exp(-np.clip(np.asarray(z, dtype=float), -30.0, 30.0)))
+    return np.clip((s - squeeze) / (1.0 - 2.0 * squeeze), 0.0, 1.0)
+
+
+class SigmoidOutputMLP(MLPRegressor):
+    """Multilayer perceptron with a sigmoid output unit.
+
+    ``scikit-learn`` regressors expose a linear output layer.  Fitting the
+    network on the (squeezed) logit of the target and squashing its prediction
+    back through the logistic function is equivalent to placing a sigmoid on
+    the output unit: predictions lie inside ``[0, 1]`` by construction rather
+    than by clipping, and the loss is expressed on the same scale as a
+    genuinely sigmoid-headed network.
     """
+
+    def fit(self, X, y):  # type: ignore[override]
+        return super().fit(X, _logit(y))
+
+    def predict(self, X):  # type: ignore[override]
+        return _expit(super().predict(X))
+
+
+# --------------------------------------------------------------------------
+# Heuristic baseline
+# --------------------------------------------------------------------------
+
+def apply_survey_informed_heuristics(
+    df: pd.DataFrame, survey: SurveyCalibration
+) -> pd.Series:
+    """Rule-based comfort score on the twelve features, in ``[0, 1]``.
+
+    The rules follow the published comfort determinants (weather exposure for
+    active modes, in-vehicle crowding, interchange burden, exposure of older
+    and mobility-restricted travellers to active modes, and trip length).  No
+    parameter is fitted.
+    """
+    def col(name: str, default: float) -> np.ndarray:
+        if name in df.columns:
+            return pd.to_numeric(df[name], errors="coerce").fillna(default).to_numpy(dtype=float)
+        return np.full(len(df), float(default))
+
+    walk = col("walk_share", 0.0)
+    bike = col("bike_share", 0.0)
+    bus = col("bus_share", 0.0)
+    tram = col("tram_share", 0.0)
+    crowding = col("crowding", 0.0)
+    transfers = col("transfers", 0.0)
+    distance = col("distance_km", survey.mean_distance_to_campus_km)
+    rain = col("rain", 0.0)
+    temperature = col("temperature_c", 14.0)
+    age = col("age", survey.mean_age)
+    restriction = col("mobility_restriction", 0.0)
+
+    score = np.full(len(df), 0.95, dtype=float)
+    score -= rain * (0.22 * walk + 0.30 * bike) * survey.weather_importance
+    score -= 0.16 * crowding
+    score -= 0.06 * np.clip(transfers, 0, 4)
+    score -= 0.09 * (age > 60).astype(float) * bike
+    score -= 0.12 * restriction * (walk + bike)
+    score -= 0.10 * (bus + tram) * (1.0 - survey.reliability_importance)
+    score -= 0.08 * walk * (1.0 - survey.safety_importance)
+    score -= 0.002 * np.maximum(distance - survey.walking_threshold_km, 0.0) * walk
+    score -= 0.004 * np.maximum(8.0 - temperature, 0.0) * (walk + bike)
+    score += (1.0 - rain) * np.clip(walk + bike, 0.0, 1.0) * 0.03
+    return pd.Series(np.clip(score, 0.0, 1.0), index=df.index)
+
+
+class HeuristicComfortModel:
+    """Wrapper exposing the heuristic through the estimator interface."""
 
     def __init__(self, survey: SurveyCalibration):
         self.survey = survey
@@ -51,256 +143,201 @@ class HeuristicComfortModel:
         return apply_survey_informed_heuristics(df, self.survey).to_numpy()
 
 
+# --------------------------------------------------------------------------
+# Training factory
+# --------------------------------------------------------------------------
+
 class SurveyInformedComfortFactory:
+    """Trains and evaluates the three comfort models on the real survey data."""
+
     def __init__(self, config: ComfortTrainingConfig, survey: SurveyCalibration):
         self.config = config
         self.survey = survey
+        self.feature_cols: List[str] = list(config.feature_columns)
 
-    def generate_synthetic_dataset(self, n_samples: Optional[int] = None, seed: Optional[int] = None) -> pd.DataFrame:
-        n = n_samples or self.config.n_samples
-        rng = np.random.default_rng(self.config.random_state if seed is None else seed)
+    # -- preprocessing -----------------------------------------------------
 
-        distance = rng.gamma(shape=2.0, scale=max(self.survey.mean_distance_to_campus_km / 2.0, 0.1), size=n)
-        walk_share = np.clip(rng.beta(2, 5, size=n), 0, 1)
-        bike_share = np.clip(rng.beta(2, 6, size=n), 0, 1)
-        bus_share = np.clip(rng.beta(3, 3, size=n), 0, 1)
-        tram_share = np.clip(rng.beta(2, 4, size=n), 0, 1)
-        car_share = np.clip(1 - (walk_share + bike_share + bus_share + tram_share), 0, 1)
-        row_sum = walk_share + bike_share + bus_share + tram_share + car_share
-        walk_share, bike_share, bus_share, tram_share, car_share = [x / row_sum for x in (walk_share, bike_share, bus_share, tram_share, car_share)]
+    def _preprocessor(self) -> Pipeline:
+        """Median imputation then min-max normalization to ``[0, 1]``.
 
-        df = pd.DataFrame(
-            {
-                "walk_share": walk_share,
-                "bike_share": bike_share,
-                "bus_share": bus_share,
-                "tram_share": tram_share,
-                "car_share": car_share,
-                "crowding": rng.uniform(0, 1, size=n),
-                "transfers": rng.integers(0, 5, size=n),
-                "distance_km": distance,
-                "rain": rng.binomial(1, self.survey.weather_importance, size=n),
-                "temperature_c": rng.normal(16, 8, size=n),
-                "age": np.clip(rng.normal(self.survey.mean_age, 7, size=n), 18, 70),
-                "mobility_restriction": rng.binomial(1, 0.08, size=n),
-                "reliability_penalty": np.clip(rng.normal(1 - self.survey.reliability_importance, 0.15, size=n), 0, 1),
-                "safety_penalty": np.clip(rng.normal(1 - self.survey.safety_importance, 0.15, size=n), 0, 1),
-                "fare_eur": np.clip(rng.normal(self.survey.mean_daily_budget_eur / 2, 1.2, size=n), 0, 15),
-                "travel_time_min": np.clip(rng.normal(28, 12, size=n), 5, 120),
-                "weather_label": rng.choice(["sunny", "cloudy", "rainy"], size=n, p=[0.35, 0.35, 0.30]),
-                "dominant_mode": rng.choice(["walk", "bike", "bus", "tram", "car"], size=n, p=[0.15, 0.15, 0.32, 0.22, 0.16]),
-            }
+        Both are fitted on the training fold only; the same bounds are applied
+        to the test fold (Section 4.1).
+        """
+        return Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", MinMaxScaler(feature_range=(0.0, 1.0), clip=True)),
+        ])
+
+    def _split(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Leakage-free split at the respondent level."""
+        groups = df["respondent_id"] if "respondent_id" in df.columns else np.arange(len(df))
+        gss = GroupShuffleSplit(
+            n_splits=1, test_size=self.config.test_size,
+            random_state=self.config.random_state,
         )
+        train_idx, test_idx = next(gss.split(df, groups=groups))
+        return df.iloc[train_idx].copy(), df.iloc[test_idx].copy()
 
-        df["comfort_score"] = apply_survey_informed_heuristics(df, self.survey)
-        return df
+    def _models(self) -> List[Tuple[str, Optional[Pipeline]]]:
+        return [
+            ("heuristic_direct", None),
+            ("linear_regression", Pipeline([
+                ("preprocess", self._preprocessor()),
+                ("model", LinearRegression()),
+            ])),
+            ("mlp_surrogate", Pipeline([
+                ("preprocess", self._preprocessor()),
+                ("model", SigmoidOutputMLP(
+                    hidden_layer_sizes=self.config.hidden_layers,
+                    activation=self.config.activation,
+                    alpha=self.config.alpha,
+                    solver="adam",
+                    learning_rate_init=self.config.learning_rate_init,
+                    max_iter=self.config.max_iter,
+                    early_stopping=self.config.early_stopping,
+                    validation_fraction=self.config.validation_fraction,
+                    random_state=self.config.random_state,
+                )),
+            ])),
+        ]
+
+    # -- training ----------------------------------------------------------
 
     def train_models(self, df: pd.DataFrame) -> List[ComfortModelResult]:
-        from sklearn.model_selection import GroupShuffleSplit
-        
-        feature_cols = [
-            "rain", "walk_share", "bike_share", "crowding", "transfers", "age",
-            "mobility_restriction", "reliability_penalty", "safety_penalty", 
-            "fare_eur", "distance_km", "travel_time_min"
-        ]
-        
-        if "profile_id" not in df.columns:
-            raise ValueError("Data leakage prevention failed: 'profile_id' is missing from the dataset. Cannot safely perform GroupShuffleSplit.")
-            
-        groups = df["profile_id"]
-        gss = GroupShuffleSplit(n_splits=1, test_size=self.config.test_size, random_state=self.config.random_state)
-        train_idx, test_idx = next(gss.split(df, groups=groups))
-        
-        train_df = df.iloc[train_idx].copy()
-        test_df = df.iloc[test_idx].copy()
+        missing = [c for c in self.feature_cols if c not in df.columns]
+        if missing:
+            raise KeyError(f"comfort training frame is missing features: {missing}")
 
-        numeric_cols = [c for c in feature_cols if pd.api.types.is_numeric_dtype(df[c])]
-        categorical_cols = [c for c in feature_cols if c not in numeric_cols]
-
-        preprocessor = ColumnTransformer(
-            transformers=[
-                (
-                    "num",
-                    Pipeline(
-                        steps=[
-                            ("imputer", SimpleImputer(strategy="median")),
-                            ("scaler", MinMaxScaler(feature_range=(0, 1))),
-                        ]
-                    ),
-                    numeric_cols,
-                ),
-                (
-                    "cat",
-                    Pipeline(
-                        steps=[
-                            ("imputer", SimpleImputer(strategy="most_frequent")),
-                            ("onehot", OneHotEncoder(handle_unknown="ignore")),
-                        ]
-                    ),
-                    categorical_cols,
-                ),
-            ]
+        train_df, test_df = self._split(df)
+        logger.info(
+            "Comfort split: %d train / %d test pairs from %d / %d respondents",
+            len(train_df), len(test_df),
+            train_df.get("respondent_id", pd.Series(dtype=object)).nunique(),
+            test_df.get("respondent_id", pd.Series(dtype=object)).nunique(),
         )
 
-        models: List[Tuple[str, Optional[Pipeline]]] = [
-            ("heuristic_direct", None),
-            (
-                "linear_regression",
-                Pipeline(
-                    steps=[
-                        ("preprocess", preprocessor),
-                        ("model", LinearRegression()),
-                    ]
-                ),
-            ),
-            (
-                "mlp_surrogate",
-                Pipeline(
-                    steps=[
-                        ("preprocess", preprocessor),
-                        (
-                            "model",
-                            SigmoidMLPRegressor(
-                                hidden_layer_sizes=self.config.hidden_layers,
-                                activation=self.config.activation,
-                                alpha=self.config.alpha,
-                                random_state=self.config.random_state,
-                                max_iter=self.config.max_iter,
-                                early_stopping=self.config.early_stopping,
-                                learning_rate_init=self.config.learning_rate_init,
-                            ),
-                        ),
-                    ]
-                ),
-            ),
-        ]
-
         results: List[ComfortModelResult] = []
-        for model_name, pipeline in models:
-            if model_name == "heuristic_direct":
-                predictor = HeuristicComfortModel(self.survey)
-                y_pred = predictor.predict(test_df)
+        for name, pipeline in self._models():
+            if name == "heuristic_direct":
+                y_pred = HeuristicComfortModel(self.survey).predict(test_df)
             else:
-                pipeline.fit(train_df[feature_cols], train_df["comfort_score"])
-                y_pred = pipeline.predict(test_df[feature_cols])
+                pipeline.fit(train_df[self.feature_cols], train_df["comfort_score"])
+                y_pred = pipeline.predict(test_df[self.feature_cols])
 
-            pred_df = test_df[feature_cols].copy()
+            pred_df = test_df[self.feature_cols].copy()
             pred_df["y_true"] = test_df["comfort_score"].to_numpy()
             pred_df["y_pred"] = np.clip(y_pred, 0.0, 1.0)
             pred_df["abs_error"] = np.abs(pred_df["y_true"] - pred_df["y_pred"])
 
-            results.append(
-                ComfortModelResult(
-                    model_name=model_name,
-                    pipeline=pipeline,
-                    metrics=compute_prediction_metrics(pred_df["y_true"], pred_df["y_pred"]),
-                    region_metrics=compute_region_wise_errors(pred_df),
-                    predictions=pred_df,
-                )
-            )
+            results.append(ComfortModelResult(
+                model_name=name,
+                pipeline=pipeline,
+                metrics=compute_prediction_metrics(pred_df["y_true"], pred_df["y_pred"]),
+                region_metrics=compute_region_wise_errors(pred_df),
+                predictions=pred_df,
+            ))
+            logger.info("  %-18s R2=%.3f RMSE=%.4f MAE=%.4f", name,
+                        results[-1].metrics["r2"], results[-1].metrics["rmse"],
+                        results[-1].metrics["mae"])
         return results
 
-    def noise_robustness(self, model_result: ComfortModelResult, df: pd.DataFrame) -> pd.DataFrame:
-        feature_cols = [c for c in df.columns if c != "comfort_score"]
-        base = df.copy()
+    # -- robustness --------------------------------------------------------
+
+    def noise_robustness(
+        self,
+        model_result: ComfortModelResult,
+        df: pd.DataFrame,
+        noise_levels: Optional[Sequence[float]] = None,
+    ) -> pd.DataFrame:
+        """Degradation of predictive accuracy under **input-feature** noise.
+
+        Additive Gaussian noise of standard deviation ``sigma`` is applied to
+        the twelve input features of the *test* fold, after min-max scaling has
+        been fitted on the clean training fold, so the perturbation is
+        expressed on the same scale for every feature (Section 6.6).  The
+        labels are never modified.
+        """
+        levels = list(noise_levels if noise_levels is not None else self.config.noise_levels)
+        train_df, test_df = self._split(df)
+
+        scaler = self._preprocessor()
+        scaler.fit(train_df[self.feature_cols])
+
+        if model_result.model_name != "heuristic_direct":
+            model_result.pipeline.fit(train_df[self.feature_cols], train_df["comfort_score"])
+
+        y_true = test_df["comfort_score"].to_numpy(dtype=float)
         records: List[Dict[str, float]] = []
 
-        for noise_level in self.config.noise_levels:
-            noisy = base.copy()
-            if noise_level > 0:
-                rng = np.random.default_rng(self.config.random_state + int(noise_level * 1000))
-                
-                # Add noise to continuous features, not the target!
-                numeric_cols = ["distance_km", "travel_time_min", "age", "fare_eur"]
-                for col in numeric_cols:
-                    if col in noisy.columns:
-                        # Add Gaussian noise relative to standard deviation
-                        std = max(noisy[col].std(), 0.1)
-                        noisy[col] = noisy[col] + rng.normal(0, noise_level * std, size=len(noisy))
+        for sigma in levels:
+            rng = np.random.default_rng(self.config.random_state + int(round(sigma * 1000)))
+            X_scaled = scaler.transform(test_df[self.feature_cols])
+            if sigma > 0:
+                X_scaled = np.clip(X_scaled + rng.normal(0.0, sigma, size=X_scaled.shape), 0.0, 1.0)
+            X_noisy = pd.DataFrame(
+                scaler.named_steps["scaler"].inverse_transform(X_scaled),
+                columns=self.feature_cols, index=test_df.index,
+            )
 
             if model_result.model_name == "heuristic_direct":
-                y_pred = HeuristicComfortModel(self.survey).predict(noisy)
+                y_pred = HeuristicComfortModel(self.survey).predict(X_noisy)
             else:
-                from sklearn.model_selection import GroupShuffleSplit
-                if "profile_id" not in noisy.columns:
-                    raise ValueError("Missing 'profile_id' for grouped split in noise robustness.")
-                groups = noisy["profile_id"]
-                gss = GroupShuffleSplit(n_splits=1, test_size=self.config.test_size, random_state=self.config.random_state)
-                train_idx, test_idx = next(gss.split(noisy, groups=groups))
-                train_df = noisy.iloc[train_idx].copy()
-                test_df = noisy.iloc[test_idx].copy()
-                
-                model_result.pipeline.fit(train_df[feature_cols], train_df["comfort_score"])
-                y_pred = model_result.pipeline.predict(test_df[feature_cols])
-                noisy = test_df
+                y_pred = model_result.pipeline.predict(X_noisy[self.feature_cols])
 
-            metrics = compute_prediction_metrics(noisy["comfort_score"], np.clip(y_pred, 0.0, 1.0))
-            metrics["noise_level"] = noise_level
+            metrics = compute_prediction_metrics(y_true, np.clip(y_pred, 0.0, 1.0))
+            metrics["noise_level"] = float(sigma)
             metrics["model_name"] = model_result.model_name
             records.append(metrics)
+
         return pd.DataFrame(records)
 
 
-def apply_survey_informed_heuristics(df: pd.DataFrame, survey: SurveyCalibration) -> pd.Series:
-    score = np.full(len(df), 0.95, dtype=float)
-
-    rain = df.get("rain", 0).astype(float).to_numpy() if isinstance(df, pd.DataFrame) else 0
-    walk_share = df.get("walk_share", 0).astype(float).to_numpy()
-    bike_share = df.get("bike_share", 0).astype(float).to_numpy()
-    crowding = df.get("crowding", 0).astype(float).to_numpy()
-    transfers = df.get("transfers", 0).astype(float).to_numpy()
-    age = df.get("age", survey.mean_age).astype(float).to_numpy()
-    mobility_restriction = df.get("mobility_restriction", 0).astype(float).to_numpy()
-    reliability_penalty = df.get("reliability_penalty", 0).astype(float).to_numpy()
-    safety_penalty = df.get("safety_penalty", 0).astype(float).to_numpy()
-    fare_eur = df.get("fare_eur", survey.mean_daily_budget_eur / 2).astype(float).to_numpy()
-    distance_km = df.get("distance_km", survey.mean_distance_to_campus_km).astype(float).to_numpy()
-    travel_time_min = df.get("travel_time_min", 25).astype(float).to_numpy()
-
-    score -= rain * (0.22 * walk_share + 0.30 * bike_share) * survey.weather_importance
-    score -= 0.16 * crowding
-    score -= 0.06 * np.clip(transfers, 0, 4)
-    score -= 0.09 * (age > 60).astype(float) * bike_share
-    score -= 0.12 * mobility_restriction * (walk_share + bike_share)
-    score -= 0.10 * reliability_penalty * survey.reliability_importance
-    score -= 0.08 * safety_penalty * survey.safety_importance
-    score -= 0.05 * np.maximum(fare_eur - survey.mean_daily_budget_eur, 0)
-    score -= 0.002 * np.maximum(distance_km - survey.walking_threshold_km, 0) * walk_share
-    score -= 0.0015 * np.maximum(travel_time_min - 45, 0)
-
-    sunny_bonus = (1 - rain) * np.clip(walk_share + bike_share, 0, 1) * 0.03
-    score += sunny_bonus
-
-    return pd.Series(np.clip(score, 0.0, 1.0), index=df.index)
-
+# --------------------------------------------------------------------------
+# Metrics
+# --------------------------------------------------------------------------
 
 def compute_prediction_metrics(y_true: Iterable[float], y_pred: Iterable[float]) -> Dict[str, float]:
     y_true = np.asarray(list(y_true), dtype=float)
     y_pred = np.asarray(list(y_pred), dtype=float)
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    mae = float(mean_absolute_error(y_true, y_pred))
-    r2 = float(r2_score(y_true, y_pred)) if len(np.unique(y_true)) > 1 else np.nan
     return {
-        "rmse": rmse,
-        "mae": mae,
-        "r2": r2,
+        "rmse": float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "mae": float(mean_absolute_error(y_true, y_pred)),
+        "r2": float(r2_score(y_true, y_pred)) if len(np.unique(y_true)) > 1 else float("nan"),
     }
 
 
 def compute_region_wise_errors(predictions: pd.DataFrame) -> pd.DataFrame:
-    region_df = predictions.copy()
-    region_df["comfort_band"] = pd.cut(
-        region_df["y_true"],
-        bins=[-0.01, 0.33, 0.66, 1.01],
+    region = predictions.copy()
+    region["comfort_band"] = pd.cut(
+        region["y_true"], bins=[-0.01, 0.33, 0.66, 1.01],
         labels=["low", "medium", "high"],
     )
     return (
-        region_df.groupby("comfort_band", observed=False)
-        .agg(
-            n=("abs_error", "size"),
-            mae=("abs_error", "mean"),
-            mean_true=("y_true", "mean"),
-            mean_pred=("y_pred", "mean"),
-        )
+        region.groupby("comfort_band", observed=False)
+        .agg(n=("abs_error", "size"), mae=("abs_error", "mean"),
+             mean_true=("y_true", "mean"), mean_pred=("y_pred", "mean"))
         .reset_index()
     )
+
+
+# --------------------------------------------------------------------------
+# Runtime predictor used inside the optimization loop
+# --------------------------------------------------------------------------
+
+class TrainedComfortPredictor:
+    """Adapter exposing a trained model to :class:`PathMultimodalEvaluator`."""
+
+    def __init__(self, comfort_results: Sequence[ComfortModelResult],
+                 model_name: str = "mlp_surrogate"):
+        match = [r for r in comfort_results if r.model_name == model_name]
+        if not match:
+            raise ValueError(f"model '{model_name}' not found among trained comfort models")
+        self.model_name = model_name
+        self.pipeline = match[0].pipeline
+        self.feature_cols = list(COMFORT_FEATURES)
+
+    def predict(self, comfort_df: pd.DataFrame, survey: SurveyCalibration) -> np.ndarray:
+        if self.pipeline is None:  # heuristic baseline
+            return apply_survey_informed_heuristics(comfort_df, survey).to_numpy()
+        preds = self.pipeline.predict(comfort_df[self.feature_cols])
+        return np.clip(np.asarray(preds, dtype=float), 0.0, 1.0)

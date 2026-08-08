@@ -1,0 +1,13 @@
+{
+  "sample_size": 749,
+  "mean_age": 25.79305740987984,
+  "mean_distance_to_campus_km": 4.862563417890521,
+  "mean_daily_budget_eur": 5.6586915887850475,
+  "walking_threshold_km": 1.1604806408544726,
+  "weather_importance": 0.8229639519359147,
+  "safety_importance": 0.7781041388518024,
+  "reliability_importance": 0.7348464619492657,
+  "comfort_over_emission_prob": 0.4165554072096128,
+  "comfort_over_cost_prob": 0.41255006675567424,
+  "eco_attitude_mean": 0.7100133511348464
+}
