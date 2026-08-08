@@ -1,0 +1,5 @@
+{
+  "osm": "https://download.geofabrik.de/europe/france/alsace-latest.osm.pbf",
+  "gtfs": "https://data.strasbourg.eu/api/explore/v2.1/catalog/datasets/horaires-des-lignes-cts-gtfs/exports/zip",
+  "bounding_box": "7.67,48.51,7.84,48.65"
+}

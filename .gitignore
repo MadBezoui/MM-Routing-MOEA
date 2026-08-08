@@ -1,7 +1,4 @@
 # Large automatically downloaded network data
-data/raw/*.osm.pbf
-data/raw/*.zip
-data/raw/*.md5
 
 # Generated network artefacts
 data/processed/*.graphml
@@ -19,5 +16,6 @@ venv/
 
 # Temporary downloads
 *.part
-data/raw/
 data/processed/
+data/raw/strasbourg.osm.osm
+data/raw/alsace-latest.osm.pbf
