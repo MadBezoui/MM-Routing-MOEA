@@ -168,8 +168,17 @@ class MetricsCallback(Callback):
         if not self.enabled:
             return
         pop = algorithm.pop
-        F = pop.get("F")
-        G = pop.get("G")
+        
+        if isinstance(algorithm.problem, PenaltyProblem):
+            X = pop.get("X")
+            base = algorithm.problem.base_problem
+            F_orig, G_orig, _ = base._evaluator(X, base.profile, base.extras, base.scenario)
+            F = np.asarray(F_orig, dtype=float)
+            G = np.asarray(G_orig, dtype=float)
+        else:
+            F = pop.get("F")
+            G = pop.get("G")
+
         if G is not None and np.ndim(G) > 1:
             feasible = np.all(G <= 0, axis=1)
         elif G is not None:
@@ -258,7 +267,8 @@ def make_algorithm(
     # Object-encoded variables cannot be compared by pymoo's default numeric
     # duplicate filter.
     if encoding == "path":
-        common["eliminate_duplicates"] = False
+        from src.network.operators import PathDuplicateElimination
+        common["eliminate_duplicates"] = PathDuplicateElimination()
 
     ref_dirs = None
     if algo in REF_DIR_ALGORITHMS:
@@ -334,9 +344,16 @@ def run_single_algorithm(
     runtime = time.perf_counter() - start
 
     X = np.asarray(result.pop.get("X"), dtype=object)
-    F = np.asarray(result.pop.get("F"), dtype=float)
-    G = result.pop.get("G")
-    G = np.zeros((len(F), 1)) if G is None else np.asarray(G, dtype=float)
+    
+    if isinstance(actual, PenaltyProblem):
+        F_orig, G_orig, _ = problem._evaluator(X, problem.profile, problem.extras, problem.scenario)
+        F = np.asarray(F_orig, dtype=float)
+        G = np.asarray(G_orig, dtype=float)
+    else:
+        F = np.asarray(result.pop.get("F"), dtype=float)
+        G = result.pop.get("G")
+        G = np.zeros((len(F), 1)) if G is None else np.asarray(G, dtype=float)
+        
     feasible = np.all(G <= 0, axis=1) if G.ndim > 1 else np.asarray(G <= 0).ravel()
 
     final_df = pd.DataFrame(index=range(len(F)))
@@ -392,7 +409,7 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
     if pop_ckpt.exists() and hist_ckpt.exists():
         return profile_id, algo, seed, str(pop_ckpt), str(hist_ckpt), True
 
-    problem = problem_factory(profile, scenario)
+    problem = problem_factory(profile, scenario, seed)
     output = run_single_algorithm(
         problem=problem, algorithm_name=algo, seed=seed,
         n_generations=n_generations, plan=plan, n_partitions=n_partitions,

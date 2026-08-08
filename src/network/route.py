@@ -103,7 +103,11 @@ def node_supports_mode(G: nx.MultiDiGraph, node: str, mode: str) -> bool:
 
 
 def is_topologically_valid(G: nx.MultiDiGraph, route: Route) -> bool:
-    """Return ``True`` when ``route`` satisfies conditions (i) and (ii) of §4.3."""
+    """Return ``True`` when ``route`` satisfies conditions (i) and (ii) of §4.3.
+    
+    Note: All transitions between incident modes are intentionally allowed by the model
+    as long as both modes are supported by the node infrastructure.
+    """
     if route is None or len(route.nodes) < 2:
         return False
     if len(set(route.nodes)) != len(route.nodes):

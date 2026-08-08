@@ -6,6 +6,7 @@ Implements Eq. 1 to Eq. 5 literally:
 
 ===========  ==========================================================
 Eq. 1        :math:`f_1(P)=\\sum_{e\\in P} t(e) + \\sum_{\\tau\\in T(P)} t_{wait}(\\tau)`
+(Note: the waiting time term includes both initial waiting time and transfer waiting time.)
 Eq. 2        :math:`f_2(P)=\\sum_{e\\in P} c(e)\\,\\pi_{m(e)}`
 Eq. 3        :math:`f_3(P)=\\sum_{e\\in P} d(e)\\,\\varepsilon_{m(e)}\\,\\omega_{m(e)}`
 Eq. 4        :math:`f_4(P)=1-M_{comfort}(\\phi(P), u)`
@@ -221,6 +222,7 @@ class PathMultimodalEvaluator:
         scenario: Any = None,
         n_monte_carlo: int = 1,
         comfort_bias: float = 0.0,
+        algorithm_seed: int = 0,
     ):
         self.G = G
         self.survey = survey
@@ -228,6 +230,8 @@ class PathMultimodalEvaluator:
         self.scenario = scenario
         self.n_monte_carlo = max(int(n_monte_carlo), 1)
         self.comfort_bias = float(comfort_bias)
+        self.algorithm_seed = int(algorithm_seed)
+        self._pregenerated_scenarios = None
 
     # -- profile bounds ----------------------------------------------------
 
@@ -272,7 +276,13 @@ class PathMultimodalEvaluator:
         routes: List[Route] = [X[i, 0] for i in range(X.shape[0])]
         n = len(routes)
         budget, t_max, w_lim = self._bounds(profile)
-        rng = np.random.default_rng(int(profile.get("seed_offset", 0)) + 977)
+        
+        if self._pregenerated_scenarios is None:
+            profile_id = str(profile.get("profile_id", "unknown"))
+            # Common random numbers: scenarios fixed per (profile, seed)
+            seed = (hash(profile_id) % (2**31)) + self.algorithm_seed
+            rng = np.random.default_rng(seed)
+            self._pregenerated_scenarios = [self._draw_factors(rng) for _ in range(self.n_monte_carlo)]
 
         f1 = np.zeros(n)
         f2 = np.zeros(n)
@@ -288,10 +298,10 @@ class PathMultimodalEvaluator:
             times = np.zeros(self.n_monte_carlo)
             breakdown = None
             for s in range(self.n_monte_carlo):
-                pricing, occupancy, congestion = self._draw_factors(rng)
+                pricing, occupancy, congestion = self._pregenerated_scenarios[s]
                 breakdown = decompose(self.G, route, pricing=pricing, occupancy=occupancy)
-                slowdown = float(np.mean([congestion[m] for m in MODES]))
-                times[s] = breakdown.in_vehicle_time_min / max(slowdown, 0.4) + breakdown.wait_time_min
+                stochastic_in_vehicle_time = sum(breakdown.time_by_mode[m] * congestion[m] for m in MODES)
+                times[s] = stochastic_in_vehicle_time + breakdown.wait_time_min
                 costs[s] = breakdown.fare_eur
                 emis[s] = breakdown.emissions_kg
 

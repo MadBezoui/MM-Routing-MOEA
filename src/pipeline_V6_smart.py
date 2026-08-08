@@ -8,7 +8,7 @@ Steps
    their three feasibility bounds.
 2. Audit and stabilize the elicited priority weights (Eq. 6-7).
 3. Load the consolidated multimodal graph and assign each profile an
-   origin-destination pair whose network distance matches the commuting
+   origin-destination pair whose great-circle distance matches the commuting
    distance the respondent reported.
 4. Build the stratified plans by Hamilton apportionment on the
    ``archetype x trip-distance`` grid.
@@ -320,12 +320,13 @@ def build_problem_factory(G, survey, comfort_predictor, scenario: ScenarioConfig
 
     shared_index = MultimodalIndex(G)
 
-    def factory(profile: Dict[str, object], run_scenario: ScenarioConfig) -> ProfiledMultimodalProblem:
+    def factory(profile: Dict[str, object], run_scenario: ScenarioConfig, seed: int = 0) -> ProfiledMultimodalProblem:
         sc = run_scenario or scenario
         evaluator = PathMultimodalEvaluator(
             G, survey, comfort_predictor, scenario=sc,
             n_monte_carlo=getattr(sc, "n_monte_carlo", 1),
             comfort_bias=getattr(sc, "comfort_bias", 0.0),
+            algorithm_seed=seed,
         )
         problem = ProfiledMultimodalProblem(
             n_var=1, n_obj=4, xl=None, xu=None,

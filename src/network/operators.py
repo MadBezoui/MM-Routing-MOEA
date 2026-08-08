@@ -14,10 +14,7 @@ Variation operators for path-encoded solutions (Section 4.3).
     admissible.
 
 ``PathMutation``
-    Replaces one edge :math:`(v_i, v_{i+1})` by a parallel edge with the same
-    tail and head whenever one exists.  When it does not, a local admissible
-    detour connecting :math:`v_i` to :math:`v_{i+1}` through at most two
-    intermediate nodes is sampled.
+    Mutation first attempts a parallel-edge mode substitution between the same endpoints. If no such substitution exists, it introduces a local detour containing at most two intermediate nodes.
 
 Offspring that fail the topological-validity check are rejected and resampled
 up to :data:`MAX_RESAMPLE`; if no valid offspring is produced the parent is
@@ -47,6 +44,7 @@ import numpy as np
 from pymoo.core.crossover import Crossover
 from pymoo.core.mutation import Mutation
 from pymoo.core.sampling import Sampling
+from pymoo.core.duplicate import ElementwiseDuplicateElimination
 
 from src.network.route import Route, is_topologically_valid, node_supports_mode
 
@@ -393,7 +391,7 @@ class PathMutation(Mutation):
         return Y
 
 
-class PathDuplicateElimination:
+class PathDuplicateElimination(ElementwiseDuplicateElimination):
     """Structural duplicate test used by pymoo's duplicate filter."""
 
     def is_equal(self, a, b) -> bool:  # pragma: no cover - trivial

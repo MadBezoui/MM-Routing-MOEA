@@ -26,6 +26,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from src.config import DEFAULT_BENCHMARK
+
 logger = logging.getLogger(__name__)
 
 #: Studentised range statistic q_alpha / sqrt(2) for the Nemenyi test at
@@ -102,11 +104,26 @@ def compare(
     algo_a: str,
     algo_b: str,
     value_col: str = "normalized_hv",
+    higher_is_better: bool = True,
 ) -> Dict[str, object]:
     """Full paired comparison of two algorithms under the Section 4.5 protocol."""
     seed_level, profile_level = paired_differences(metrics, algo_a, algo_b, value_col)
     confirmatory = wilcoxon_report(profile_level.to_numpy())
     descriptive = wilcoxon_report(seed_level.to_numpy())
+    
+    tol = DEFAULT_BENCHMARK.tie_tolerance
+    if higher_is_better:
+        run_win_rate_a = float((seed_level > tol).mean())
+        run_win_rate_b = float((seed_level < -tol).mean())
+        profile_wins_a = int((profile_level > tol).sum())
+        profile_wins_b = int((profile_level < -tol).sum())
+    else:
+        run_win_rate_a = float((seed_level < -tol).mean())
+        run_win_rate_b = float((seed_level > tol).mean())
+        profile_wins_a = int((profile_level < -tol).sum())
+        profile_wins_b = int((profile_level > tol).sum())
+    profile_ties = int((np.abs(profile_level) <= tol).sum())
+
     return {
         "algo_a": algo_a,
         "algo_b": algo_b,
@@ -121,9 +138,11 @@ def compare(
         "wilcoxon_profile_r": confirmatory["r"],
         "hodges_lehmann_profile": confirmatory["hodges_lehmann"],
         "wilcoxon_seed_p_descriptive": descriptive["p_value"],
-        "run_win_rate_b": float((seed_level > 0).mean()),
-        "profile_wins_b": int((profile_level > 0).sum()),
-        "profile_wins_a": int((profile_level < 0).sum()),
+        "run_win_rate_a": run_win_rate_a,
+        "run_win_rate_b": run_win_rate_b,
+        "profile_wins_a": profile_wins_a,
+        "profile_wins_b": profile_wins_b,
+        "profile_ties": profile_ties,
         "pct_2_5": float(np.percentile(seed_level, 2.5)),
         "pct_97_5": float(np.percentile(seed_level, 97.5)),
     }
