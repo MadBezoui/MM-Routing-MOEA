@@ -22,5 +22,6 @@ venv/
 data/raw/*.osm
 
 # Experimental Results
-results/experiments/
-results/smoke_test/
+results/
+outputs*/
+archive/
