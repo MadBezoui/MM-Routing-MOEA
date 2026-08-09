@@ -1,0 +1,9 @@
+plan,algo_a,algo_b,n_pairs,wins_a,wins_b,ties,win_rate_a,win_rate_b
+main_nsga2_vs_nsga3_150profiles,nsga2,nsga3,4500,400,4100,0,0.08888888888888889,0.9111111111111111
+extended_benchmark_30profiles,moead,nsga2,300,0,300,0,0.0,1.0
+extended_benchmark_30profiles,moead,nsga3,300,0,300,0,0.0,1.0
+extended_benchmark_30profiles,moead,smsemoa,150,0,150,0,0.0,1.0
+extended_benchmark_30profiles,nsga2,nsga3,300,70,230,0,0.23333333333333334,0.7666666666666667
+extended_benchmark_30profiles,nsga2,smsemoa,150,104,46,0,0.6933333333333334,0.30666666666666664
+extended_benchmark_30profiles,nsga3,smsemoa,150,140,10,0,0.9333333333333333,0.06666666666666667
+representative_curves_10profiles,nsga2,nsga3,300,24,276,0,0.08,0.92

@@ -1,0 +1,24 @@
+{
+  "main_pi_nsga3_vs_nsga2_150profiles": {
+    "algo_a": "nsga2",
+    "algo_b": "pi_nsga3",
+    "n_paired_runs": 602,
+    "n_profiles": 21,
+    "mean_diff": 0.011381637325606264,
+    "sd_diff": 0.0733705825534779,
+    "dz_run_level_descriptive": 0.15512535037200345,
+    "dz_profile_level_confirmatory": 0.5636310929265232,
+    "wilcoxon_profile_statistic": 44.0,
+    "wilcoxon_profile_p": 0.012948886352603273,
+    "wilcoxon_profile_r": 0.542308984770511,
+    "hodges_lehmann_profile": 0.006894114253062881,
+    "wilcoxon_seed_p_descriptive": 4.5543987579000004e-15,
+    "run_win_rate_a": 0.5996677740863787,
+    "run_win_rate_b": 0.3089700996677741,
+    "profile_wins_a": 16,
+    "profile_wins_b": 5,
+    "profile_ties": 0,
+    "pct_2_5": -0.057650562037921196,
+    "pct_97_5": 0.09377860839163549
+  }
+}

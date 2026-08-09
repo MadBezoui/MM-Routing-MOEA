@@ -110,7 +110,7 @@ def load_real_survey_calibration(survey_dir: str | Path) -> SurveyCalibration:
 
     return SurveyCalibration(
         sample_size=len(demo),
-        mean_age=float(demo["age"].mean()),
+        mean_age=float(demo["age_group"].str.extract(r'(\d+)-(\d+)').astype(float).mean(axis=1).mean()),
         mean_distance_to_campus_km=float(demo["distance_km"].mean()),
         mean_daily_budget_eur=float(demo["max_budget_eur"].mean()),
         mean_max_travel_time_min=float(demo["max_travel_time_min"].mean()),
@@ -170,7 +170,7 @@ def load_real_profiles(survey_dir: str | Path) -> pd.DataFrame:
         "archetype": demo["archetype"].str.lower().str.replace(" ", "_"),
         "trip_distance_bin": demo["distance_category"].str.lower(),
         "distance_km": demo["distance_km"].clip(lower=0.3),
-        "age": demo["age"],
+        "age": demo["age_group"].str.extract(r'(\d+)-(\d+)').astype(float).mean(axis=1),
         # --- the three feasibility bounds of Eq. 5 ---
         "budget_eur": demo["max_budget_eur"].clip(lower=0.5),
         "max_travel_time_min": demo["max_travel_time_min"].clip(lower=5.0),
@@ -252,7 +252,7 @@ def load_comfort_training_data(survey_dir: str | Path) -> pd.DataFrame:
     weather = scen["weather"].astype(str).str.lower().str.strip()
 
     demo_lookup = demo.set_index("student_id")
-    age = scen["student_id"].map(demo_lookup["age"])
+    age = scen["student_id"].map(demo_lookup["age_group"].str.extract(r'(\d+)-(\d+)').astype(float).mean(axis=1))
     restriction = scen["student_id"].map(
         demo_lookup["mobility_restriction"].map(
             lambda x: 1 if str(x).strip().lower() in ("yes", "oui", "1", "true") else 0

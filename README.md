@@ -139,7 +139,7 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 
 ## Reproducibility and Results
 
-This repository contains the current path-encoded implementation of the formulation described in Section 3. The full source code, de-identified survey-derived data, frozen network-input provenance, logical random seeds, aggregated experimental outputs, and scripts used to generate every table and figure are archived in Zenodo (DOI: 10.5281/zenodo.XXXXXXX). The corresponding development repository is available at https://github.com/MadBezoui/MM-Routing-MOEA. The results reported in the article correspond exactly to release v1.0.0. A top-level REPRODUCE.md provides the commands and expected outputs for every experiment, table, and figure.
+This repository contains the current path-encoded implementation of the formulation described in Section 3. The full source code, de-identified survey-derived data, frozen network-input provenance, logical random seeds, aggregated experimental outputs, and scripts used to generate every table and figure are archived in Zenodo (DOI will be provided upon publication). The corresponding development repository is available at https://github.com/MadBezoui/MM-Routing-MOEA. The results reported in the article correspond exactly to release v1.0.0. A top-level REPRODUCE.md provides the commands and expected outputs for every experiment, table, and figure.
 
 ## Verification status
 

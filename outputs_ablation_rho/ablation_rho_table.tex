@@ -1,0 +1,24 @@
+\begin{table}[ht]
+\centering
+\caption{\vnew{Sensitivity of PI-NSGA-III performance to the
+  anchor-spread parameter~$\rho$ (Eq.~\ref{eq:anchors}).
+  Runs use $200$ paired observations (profile~$\times$~seed).
+  $d_z$: paired Cohen's~$d_z$; $p$: two-sided Wilcoxon signed-rank test.}}
+\label{tab:rho_ablation}
+\small
+\begin{tabular}{c cc cc c}
+\toprule
+$\rho$ & Mean $\nHV$\,(PI-NSGA-III) & Std & Mean $\nHV$\,(NSGA-II) & Std & $d_z$ \\
+\midrule
+$0.10$$^{\dagger}$ & $0.5678$ & $0.2686$ & $0.6055$ & $0.2798$ & $-1.18$ \\
+$0.20$ & $0.5725$ & $0.2671$ & $0.6083$ & $0.2772$ & $-1.13$ \\
+$0.30$$^{*}$ & $\mathbf{0.5779}$ & $0.2622$ & $0.6164$ & $0.2724$ & $\mathbf{-1.21}$ \\
+$0.50$$^{\ddagger}$ & $0.5686$ & $0.2695$ & $0.6040$ & $0.2804$ & $-1.17$ \\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}[flushleft]\footnotesize
+  \item[$^{\dagger}$] Anchors cluster tightly around $w_{\mathrm{stab}}$.
+  \item[$^{*}$] Value used in the manuscript.
+  \item[$^{\ddagger}$] Anchors half-way toward each objective axis.
+\end{tablenotes}
+\end{table}

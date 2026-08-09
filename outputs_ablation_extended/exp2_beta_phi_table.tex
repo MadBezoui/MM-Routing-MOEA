@@ -1,0 +1,19 @@
+\begin{table}[ht]
+\centering\small
+\caption{\vnew{Sensitivity of PI-NSGA-III advantage to stabilisation
+  parameters $\beta$ (uniform blend) and $\varphi$ (per-component floor).
+  Each cell shows paired Cohen's $d_z$ (PI-NSGA-III vs.\ NSGA-II) on a
+  stratified 8-profile subset ($5$ seeds, $100$ generations).
+  \textbf{Bold}: canonical values used in the manuscript ($\beta=0.20$,
+  $\varphi=0.08$).  $d_z < 0$ denotes PI-NSGA-III advantage.}}
+\label{tab:beta_phi_ablation}
+\begin{tabular}{ccccc}
+\toprule
+$(\beta,\,\varphi)$ & $\beta=0.00$ & $\beta=0.10$ & $\beta=0.20$ & $\beta=0.30$ \\
+\midrule
+$\varphi=0.00$ & $-1.06$ & $-1.08$ & $-1.06$ & $-1.14$ \\
+$\varphi=0.04$ & $-1.06$ & $-1.08$ & $-1.06$ & $-1.14$ \\
+$\varphi=0.08$ & $-0.76$ & $-1.06$ & $\mathbf{-1.06}$ & $-1.14$ \\
+\bottomrule
+\end{tabular}
+\end{table}

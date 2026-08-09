@@ -22,6 +22,7 @@ venv/
 data/raw/*.osm
 
 # Experimental Results
-results/
-outputs*/
+results/outputs_main/checkpoints/
 archive/
+outputs_v4_parallel_3threads/
+results/outputs_main/*/checkpoints/

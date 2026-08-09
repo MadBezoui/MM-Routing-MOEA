@@ -1,0 +1,39 @@
+{
+  "n_respondents": 749,
+  "n_trip_comfort_pairs": 4847,
+  "scenarios_per_respondent": {
+    "min": 4,
+    "max": 9,
+    "median": 7.0
+  },
+  "comfort_rating_scale": {
+    "column": "human_comfort_rating_1_5",
+    "observed_min": 2.0,
+    "observed_max": 5.0,
+    "n_distinct_levels": 4,
+    "normalization": "human_comfort_normalized = (rating - 1) / 4"
+  },
+  "distance_km": {
+    "mean": 4.862216288384513,
+    "std": 3.042734996342867
+  },
+  "corr_distance_budget": 0.8461346977534582,
+  "feature_provenance": {
+    "recorded": [
+      "mode_mix",
+      "crowding",
+      "transfers",
+      "distance_km",
+      "weather"
+    ],
+    "joined_from_demographics": [
+      "age",
+      "mobility_restriction"
+    ],
+    "derived_deterministically": {
+      "rain": "weather in {rain, rainy}",
+      "temperature_c": "weather mapped to September climate normals"
+    },
+    "randomly_generated": []
+  }
+}

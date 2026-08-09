@@ -1,0 +1,5 @@
+rho,mean_nHV_NSGA3,std_nHV_NSGA3,mean_nHV_NSGA2,std_nHV_NSGA2,d_z,p_value,n_pairs,win_rate,note
+0.1,0.5678,0.2686,0.6055,0.2798,-1.18,0.0,200,0/20,anchors close to w_stab
+0.2,0.5725,0.2671,0.6083,0.2772,-1.1312,0.0,200,0/20,
+0.3,0.5779,0.2622,0.6164,0.2724,-1.2092,0.0,200,0/20,value used in paper
+0.5,0.5686,0.2695,0.604,0.2804,-1.1678,0.0,200,1/20,anchors close to axes

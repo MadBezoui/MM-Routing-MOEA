@@ -1,0 +1,19 @@
+\begin{table}[ht]
+\centering\small
+\caption{\vnew{Three-way comparison: PI-NSGA-III vs.\ canonical NSGA-III
+  (Das--Dennis lattice, $p=8$, no priority anchors) vs.\ NSGA-II.
+  Canonical NSGA-III isolates the contribution of the reference-direction
+  framework from the contribution of priority-informed anchoring.
+  $d_z$: paired Cohen's~$d_z$; $p$: two-sided Wilcoxon signed-rank test.}}
+\label{tab:canonical_nsga3}
+\begin{tabular}{lccc}
+\toprule
+Comparison & $d_z$ & $p$-value & $n$ pairs \\
+\midrule
+PI-NSGA-III vs canonical-NSGA-III & $-0.070$ & $0.6376$ & $100$ \\
+PI-NSGA-III vs NSGA-II & $-1.290$ & $0.0000^{*}$ & $100$ \\
+canonical-NSGA-III vs NSGA-II & $-1.481$ & $0.0000^{*}$ & $100$ \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize $^{*}p < 0.05$.}
+\end{tabular}
+\end{table}

@@ -1,0 +1,4 @@
+comparison,d_z,p_value,n_pairs
+PI-NSGA-III vs canonical-NSGA-III,-0.0698,0.637605,100
+PI-NSGA-III vs NSGA-II,-1.2898,0.0,100
+canonical-NSGA-III vs NSGA-II,-1.4808,0.0,100

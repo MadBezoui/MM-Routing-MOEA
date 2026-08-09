@@ -1,0 +1,11 @@
+profile_id,archetype,trip_distance_bin,distance_km,age,budget_eur,rain,temperature_c,mobility_restriction,seed_offset,campus,student_status
+STU_0036,comfort_seeking,long,8.32,22,8.9,0,28.281347216577046,0,35,Strasbourg,Student
+STU_0554,comfort_seeking,medium,3.26,23,1.0,1,11.000442481206917,0,553,Strasbourg,Alternance
+STU_0476,comfort_seeking,short,0.83,19,1.64,0,29.470347881505496,0,475,Strasbourg,Student
+STU_0362,cost_sensitive,long,9.7,27,10.8,0,15.950019843213184,0,361,Nancy,Alternance
+STU_0313,cost_sensitive,medium,2.88,53,1.77,0,15.622200386018939,0,312,Strasbourg,Student
+STU_0652,cost_sensitive,short,1.44,19,1.56,1,1.8819617936516853,0,651,Strasbourg,Alternance
+STU_0048,eco_conscious,long,7.76,43,10.39,0,14.668968619284458,0,47,Strasbourg,Alternance
+STU_0498,eco_conscious,medium,3.04,22,4.42,0,-0.48494943984315775,1,497,Strasbourg,Student
+STU_0137,eco_conscious,short,1.18,18,2.21,1,14.11188177492234,0,136,Nancy,Student
+STU_0118,time_sensitive,long,5.55,19,5.37,1,11.38990395981568,0,117,Strasbourg,Employee

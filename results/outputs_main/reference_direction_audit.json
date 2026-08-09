@@ -1,0 +1,15 @@
+{
+  "n_objectives": 4,
+  "divisions_p": 8,
+  "n_das_dennis": 165,
+  "n_anchors_constructed": 5,
+  "n_anchors_retained": 5,
+  "n_ref_dirs": 170,
+  "rho": 0.3,
+  "priority_weights": [
+    0.46319887133730586,
+    0.11378486773917355,
+    0.07767528762526736,
+    0.3453409732982533
+  ]
+}

@@ -1,0 +1,5 @@
+algorithm,n_points,twonn,lb_mle
+PI-NSGA-III,1047,3.528,2.58
+canonical-NSGA-III,1110,3.369,2.54
+NSGA-II,8273,3.253,2.536
+pooled,10430,3.325,2.629
