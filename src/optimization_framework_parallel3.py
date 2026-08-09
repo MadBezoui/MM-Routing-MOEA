@@ -429,7 +429,7 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
 
     problem = problem_factory(profile, scenario, hash_scenario)
     output = run_single_algorithm(
-        problem=problem, algorithm_name=algo, seed=hash_algo,
+        problem=problem, algorithm_name=algo, seed=seed,
         n_generations=n_generations, plan=plan, n_partitions=n_partitions,
         crossover_prob=crossover_prob, crossover_eta=crossover_eta,
         mutation_eta=mutation_eta,
@@ -445,7 +445,8 @@ def _worker_task(profile, algorithm_name, seed, problem_factory, scenario, outpu
     if len(output.history):
         output.history["os"] = platform.system()
         output.history["python_version"] = sys.version.split(" ")[0]
-        output.history["executor_seed"] = hash_algo
+        output.history["algorithm_seed"] = hash_algo
+        output.history["design_seed"] = seed
 
     output.final_population.to_csv(pop_ckpt, index=False)
     output.history.to_csv(hist_ckpt, index=False)

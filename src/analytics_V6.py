@@ -87,7 +87,14 @@ def load_populations(run_dirs: Sequence[Path], max_files: int = 3000) -> Optiona
                 if budget <= 0:
                     break
                 try:
-                    frames.append(pd.read_csv(f))
+                    df = pd.read_csv(f)
+                    stem = f.stem
+                    if "__seed" in stem:
+                        parts = stem.split("__")
+                        if len(parts) >= 3:
+                            design_seed = int(parts[-1].replace("seed", ""))
+                            df["seed"] = design_seed
+                    frames.append(df)
                     budget -= 1
                 except Exception:  # pragma: no cover
                     continue

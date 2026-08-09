@@ -78,20 +78,19 @@ confirmatory inference is the profile, never the seed.
 ## Quick start
 
 ```bash
-pip install numpy pandas scipy matplotlib scikit-learn pymoo networkx tqdm
+git clone https://github.com/MadBezoui/MM-Routing-MOEA.git
+cd MM-Routing-MOEA
+pip install -r requirements.txt
 
-# 1. build the network (once; parses the OSM extract and caches it)
-python -m src.network.builder
-python -m src.network.descriptors --out results/network
+# 1. Download data and build the network
+make data
+make network
 
-# 2. smoke test: 3 profiles, 2 seeds, 10 generations
-python -m src.pipeline_V6_smart --output-dir /tmp/smoke \
-    --plans main --profile-limit 3 --seed-limit 2 --generations 10
+# 2. Run the smoke test to ensure everything works
+make smoke
 
-# 3. full run
-python -m src.pipeline_V6_smart --output-dir results/outputs_main \
-    --plans main extended convergence ablation --max-workers 3
-python -m src.analytics_V6 --runs results/outputs_main --out results/analytics
+# 3. Full reproduction (Warning: takes ~3 days on 3 CPU cores)
+make reproduce
 ```
 
 `MANUSCRIPT_TRACEABILITY.md` maps every manuscript table and figure to its script and output.
@@ -140,7 +139,7 @@ Source URLs and SHA-256 checksums are recorded in `data/raw/sources.json` and
 
 ## Reproducibility and Results
 
-This repository contains the current path-encoded implementation of the formulation described in Section 3. The full manuscript results are being regenerated; numerical results from the superseded formulation must not be attributed to this implementation.
+This repository contains the current path-encoded implementation of the formulation described in Section 3. The full source code, de-identified survey-derived data, frozen network-input provenance, logical random seeds, aggregated experimental outputs, and scripts used to generate every table and figure are archived in Zenodo (DOI: 10.5281/zenodo.XXXXXXX). The corresponding development repository is available at https://github.com/MadBezoui/MM-Routing-MOEA. The results reported in the article correspond exactly to release v1.0.0. A top-level REPRODUCE.md provides the commands and expected outputs for every experiment, table, and figure.
 
 ## Verification status
 

@@ -18,7 +18,7 @@ To guarantee reproducible, deterministic execution of the full experimental camp
 ./run_campaign.sh
 ```
 
-This will automatically execute the optimization sequences using a parallel `ProcessPoolExecutor` with explicitly controlled RNG seeding (guaranteeing bit-identical results across platforms).
+This will automatically execute the optimization sequences using a parallel `ProcessPoolExecutor` with explicitly controlled RNG seeding. Deterministic under the pinned software environment and tested execution modes. Cross-platform bitwise identity is not guaranteed; statistical reproducibility is expected.
 
 **Note:** The full campaign involves extensive multi-objective optimization across 150 routing profiles and multiple stochastic seeds. Full execution may take several hours depending on your hardware.
 

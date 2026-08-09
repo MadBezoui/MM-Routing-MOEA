@@ -90,8 +90,8 @@ def wilcoxon_report(differences: Sequence[float], zero_method: str = "wilcox") -
                 "z": float("nan"), "r": float("nan"),
                 "hodges_lehmann": float(np.median(d)) if n else float("nan")}
 
-    result = stats.wilcoxon(d, zero_method=zero_method, alternative="two-sided")
-    z = float(stats.norm.isf(result.pvalue / 2.0))
+    result = stats.wilcoxon(d, zero_method=zero_method, alternative="two-sided", method="approx")
+    z = float(getattr(result, "zstatistic", stats.norm.isf(result.pvalue / 2.0)))
     walsh = (d[:, None] + d[None, :]) / 2.0
     hl = float(np.median(walsh[np.triu_indices(n)]))
     return {

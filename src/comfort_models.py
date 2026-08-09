@@ -71,14 +71,11 @@ def _expit(z: np.ndarray, squeeze: float = _SQUEEZE) -> np.ndarray:
 
 
 class SigmoidOutputMLP(MLPRegressor):
-    """Multilayer perceptron with a sigmoid output unit.
+    """Multilayer perceptron for comfort prediction.
 
-    ``scikit-learn`` regressors expose a linear output layer.  Fitting the
-    network on the (squeezed) logit of the target and squashing its prediction
-    back through the logistic function is equivalent to placing a sigmoid on
-    the output unit: predictions lie inside ``[0, 1]`` by construction rather
-    than by clipping, and the loss is expressed on the same scale as a
-    genuinely sigmoid-headed network.
+    An MLP regressor trained on a squeezed-logit transformation of the
+    comfort target, with inverse-logit post-transformation constraining
+    predictions to [0,1].
     """
 
     def fit(self, X, y):  # type: ignore[override]

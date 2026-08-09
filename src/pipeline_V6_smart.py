@@ -392,7 +392,16 @@ def _load_populations(plan_dir: Path) -> Optional[pd.DataFrame]:
     if ckpt.exists():
         for f in sorted(ckpt.glob("*.csv")):
             try:
-                frames.append(pd.read_csv(f))
+                df = pd.read_csv(f)
+                # Filenames are formatted as: profile_id__algorithm__seed{seed}.csv
+                # Extract the design seed from the filename to override internal hash_algo
+                stem = f.stem
+                if "__seed" in stem:
+                    parts = stem.split("__")
+                    if len(parts) >= 3:
+                        design_seed = int(parts[-1].replace("seed", ""))
+                        df["seed"] = design_seed
+                frames.append(df)
             except Exception as exc:  # pragma: no cover - corrupt checkpoint
                 logger.warning("skipping %s: %s", f.name, exc)
     return pd.concat(frames, ignore_index=True) if frames else None
@@ -408,9 +417,9 @@ def recover_hv_igd_for_plan(
     """Recompute HV, IGD and normalized HV from the population checkpoints.
 
     The default scheme is Eq. 12-13: the reference point and the normalization
-    denominator are both built from the union of *all* algorithms and seeds of
-    the profile, so neither favours any algorithm.  The alternatives are the
-    ones compared in Section 6.6.
+    denominator are both built from the union of *final feasible populations*
+    across all algorithms and seeds of the profile, so neither favours any
+    algorithm. The alternatives are the ones compared in Section 6.6.
     """
     plan_name = plan_dir.name
     populations = _load_populations(plan_dir)
